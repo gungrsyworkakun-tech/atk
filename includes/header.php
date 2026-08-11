@@ -49,7 +49,7 @@ function nav_item($file, $label, $iconName) {
   <div class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-row">
-        <span class="brand-mark"></span>
+        <img src="assets/1.png" alt="Logo" class="brand-mark" style="border-radius:9px;">
         <div>
           <h2>Pendataan ATK</h2>
           <div class="eyebrow">Sistem Inventaris</div>
