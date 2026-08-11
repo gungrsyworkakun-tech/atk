@@ -31,7 +31,7 @@ function nav_item($file, $label, $iconName) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pendataan ATK</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="icon" type="image/png" href="assets/1.png?v=<?= @filemtime(dirname(__DIR__).'/assets/1.png') ?: time() ?>">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css?v=<?= @filemtime(dirname(__DIR__) . '/assets/style.css') ?: time() ?>">
 <script>
@@ -49,7 +49,7 @@ function nav_item($file, $label, $iconName) {
   <div class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-row">
-        <img src="assets/1.png" alt="Logo" class="brand-mark" style="border-radius:9px;">
+        <img src="assets/1.png?v=<?= @filemtime(dirname(__DIR__).'/assets/1.png') ?: time() ?>" alt="Logo" class="brand-mark">
         <div>
           <h2>Pendataan ATK</h2>
           <div class="eyebrow">Sistem Inventaris</div>

@@ -7,36 +7,54 @@ $items = $pdo->query('SELECT * FROM items ORDER BY nama')->fetchAll();
 require __DIR__ . '/includes/header.php';
 ?>
 <style>
-  .barcode-toolbar{display:flex;justify-content:flex-end;margin-bottom:14px;}
-  .bc-card{position:relative;}
-  .bc-print-btn{position:absolute;top:10px;right:10px;background:var(--panel,#12161c);border:1px solid var(--line,#232a35);border-radius:6px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:inherit;}
-  .bc-print-btn:hover{background:var(--line,#232a35);}
-
+  .bc-print-header{display:none;}
   @media print {
-    .sidebar, .topbar, .barcode-toolbar, .topline, .bc-print-btn, .flash { display:none !important; }
-    .content-col, .main { margin:0 !important; padding:0 !important; }
-    .barcode-grid{ display:grid !important; grid-template-columns:repeat(3,1fr) !important; gap:12px !important; }
-    .bc-card{ border:none !important; box-shadow:none !important; break-inside:avoid; page-break-inside:avoid; }
-    .bc-card .btn, .bc-card .stok, .bc-card .nm{ display:none !important; }
-    body, .app{ background:#fff !important; }
+    .bc-print-header{
+      display:flex;align-items:center;gap:12px;
+      padding:0 0 16px;margin-bottom:16px;border-bottom:2px solid #1B2A3D;
+    }
+    .bc-print-header img{width:40px;height:40px;border-radius:9px;flex-shrink:0;}
+    .bc-print-header .ph-name{font-family:'Space Grotesk',Arial,sans-serif;font-size:17px;font-weight:700;color:#1B2A3D;}
+    .bc-print-header .ph-sub{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#5B6459;letter-spacing:.08em;text-transform:uppercase;margin-top:1px;}
+    .bc-print-header .ph-date{margin-left:auto;font-size:11px;color:#5B6459;}
   }
+  .bc-empty-search{display:none;}
 </style>
 
 <div class="topline">
-  <div><h1>Barcode Barang</h1><div class="sub">Unduh atau cetak barcode untuk setiap kode barang</div></div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <img src="assets/1.png?v=<?= @filemtime(__DIR__ . '/assets/1.png') ?: time() ?>" alt="Logo" style="width:34px;height:34px;border-radius:9px;flex-shrink:0;">
+    <div>
+      <h1>Barcode Barang</h1>
+      <div class="sub">Unduh atau cetak barcode untuk setiap kode barang</div>
+    </div>
+  </div>
 </div>
 
 <?php if (!$items): ?>
   <div class="card"><div class="empty"><b>Belum ada barang</b>Tambahkan barang di menu Data Barang untuk membuat barcode.</div></div>
 <?php else: ?>
 
-<div class="barcode-toolbar">
+<div class="barcode-toolbar" style="justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div class="bast-search" style="max-width:340px;">
+    <?= icon('search', 15) ?>
+    <input type="text" id="bc-search" placeholder="Cari nama atau kode barang…" autocomplete="off">
+  </div>
   <button type="button" class="btn btn-primary" id="btn-print-all"><?= icon('file', 15) ?> Cetak Semua Barcode</button>
 </div>
 
-<div class="barcode-grid">
+<div class="bc-print-header">
+  <img src="assets/1.png?v=<?= @filemtime(__DIR__ . '/assets/1.png') ?: time() ?>" alt="Logo">
+  <div>
+    <div class="ph-name">Pendataan ATK</div>
+    <div class="ph-sub">Sistem Inventaris</div>
+  </div>
+  <div class="ph-date">Dicetak: <?= date('d M Y H:i') ?></div>
+</div>
+
+<div class="barcode-grid" id="bc-grid">
   <?php foreach ($items as $it): ?>
-    <div class="bc-card">
+    <div class="bc-card" data-search="<?= e(mb_strtolower($it['nama'] . ' ' . $it['kode'])) ?>">
       <button type="button" class="bc-print-btn js-print-one" data-url="barcode_image.php?kode=<?= e(urlencode($it['kode'])) ?>" title="Cetak barcode ini">
         <?= icon('file', 15) ?>
       </button>
@@ -48,6 +66,10 @@ require __DIR__ . '/includes/header.php';
       </div>
     </div>
   <?php endforeach; ?>
+</div>
+
+<div class="empty bc-empty-search" id="bc-empty-search">
+  <b>Tidak ditemukan</b>Tidak ada barang yang cocok dengan pencarian.
 </div>
 
 <script>
@@ -70,6 +92,30 @@ require __DIR__ . '/includes/header.php';
       w.document.close();
     });
   });
+
+  // ---------- Pencarian barcode (filter langsung tanpa reload) ----------
+  (function () {
+    var searchInput = document.getElementById('bc-search');
+    var grid = document.getElementById('bc-grid');
+    var emptyState = document.getElementById('bc-empty-search');
+    if (!searchInput || !grid) return;
+
+    var cards = Array.prototype.slice.call(grid.querySelectorAll('.bc-card'));
+
+    searchInput.addEventListener('input', function () {
+      var q = searchInput.value.trim().toLowerCase();
+      var visibleCount = 0;
+
+      cards.forEach(function (card) {
+        var match = q === '' || card.dataset.search.indexOf(q) !== -1;
+        card.hidden = !match;
+        if (match) visibleCount++;
+      });
+
+      emptyState.style.display = (visibleCount === 0) ? 'block' : 'none';
+      grid.style.display = (visibleCount === 0) ? 'none' : '';
+    });
+  })();
 </script>
 
 <?php endif; ?>
