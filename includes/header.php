@@ -33,7 +33,7 @@ function nav_item($file, $label, $iconName) {
 <title>Pendataan ATK</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/style.css?v=<?= @filemtime(dirname(__DIR__) . '/assets/style.css') ?: time() ?>">
 <script>
   // Terapkan tema tersimpan sebelum render agar tidak ada "kedipan" warna.
   (function(){
