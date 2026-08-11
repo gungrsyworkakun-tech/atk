@@ -29,16 +29,44 @@
 </style>
 
 <script>
-  // Toggle sidebar lipat/lebar
+  // Toggle sidebar lipat/lebar (desktop) vs buka/tutup overlay (mobile)
   var sbToggle = document.getElementById('sidebar-toggle');
   var sidebar = document.getElementById('sidebar');
+  var backdrop = document.getElementById('sidebar-backdrop');
+  var isMobile = function () { return window.matchMedia('(max-width: 860px)').matches; };
+
+  function closeMobileSidebar() {
+    sidebar.classList.remove('mobile-open');
+    if (backdrop) backdrop.classList.remove('show');
+    document.body.style.overflow = '';
+  }
+  function openMobileSidebar() {
+    sidebar.classList.add('mobile-open');
+    if (backdrop) backdrop.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
   if (sbToggle && sidebar) {
     sbToggle.addEventListener('click', function () {
-      sidebar.classList.toggle('collapsed');
-      try { localStorage.setItem('atk-sidebar', sidebar.classList.contains('collapsed') ? '1' : '0'); } catch(e){}
+      if (isMobile()) {
+        sidebar.classList.contains('mobile-open') ? closeMobileSidebar() : openMobileSidebar();
+      } else {
+        sidebar.classList.toggle('collapsed');
+        try { localStorage.setItem('atk-sidebar', sidebar.classList.contains('collapsed') ? '1' : '0'); } catch(e){}
+      }
     });
-    try { if (localStorage.getItem('atk-sidebar') === '1') sidebar.classList.add('collapsed'); } catch(e){}
+    if (!isMobile()) {
+      try { if (localStorage.getItem('atk-sidebar') === '1') sidebar.classList.add('collapsed'); } catch(e){}
+    }
   }
+
+  // Tutup sidebar mobile saat klik backdrop, klik menu, tekan Esc, atau resize ke desktop
+  if (backdrop) backdrop.addEventListener('click', closeMobileSidebar);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMobileSidebar(); });
+  document.querySelectorAll('.nav-item').forEach(function (a) {
+    a.addEventListener('click', function () { if (isMobile()) closeMobileSidebar(); });
+  });
+  window.addEventListener('resize', function () { if (!isMobile()) closeMobileSidebar(); });
 
   // Toggle tema terang/gelap
   var themeBtn = document.getElementById('theme-toggle');

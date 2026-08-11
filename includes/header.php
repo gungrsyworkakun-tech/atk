@@ -115,6 +115,8 @@ function nav_item($file, $label, $iconName) {
     </div>
   </div>
 
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
   <div class="content-col">
     <div class="topbar">
       <button class="icon-btn-ghost" id="sidebar-toggle" type="button" title="Lipat/lebarkan sidebar"><?= icon('sidebar', 18) ?></button>
