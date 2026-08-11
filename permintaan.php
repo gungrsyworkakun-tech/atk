@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'ajukan') 
 
     $itemIds = $_POST['item_id'] ?? [];
     $jumlahs = $_POST['jumlah'] ?? [];
-    $satuanPilihan = $_POST['satuan_id'] ?? []; // 'base' atau id dari item_satuan, paralel dengan item_id[]
+    $satuanPilihan = $_POST['satuan_id'] ?? [];
 
     $rows = [];
     foreach ($itemIds as $i => $itemId) {
@@ -48,13 +48,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'ajukan') 
 
     $pdo->beginTransaction();
     try {
-        // Kunci & hitung kebutuhan per barang dalam satuan dasar (server-side, tidak percaya faktor dari client).
         $stmtLock = $pdo->prepare('SELECT * FROM items WHERE id = ? FOR UPDATE');
         $stmtSat = $pdo->prepare('SELECT * FROM item_satuan WHERE id = ? AND item_id = ?');
 
         $itemsCache = [];
-        $perItemNeed = []; // total kebutuhan base per item_id, untuk validasi stok
-        $preparedRows = []; // baris siap insert, sudah dikonversi ke base
+        $perItemNeed = [];
+        $preparedRows = [];
 
         foreach ($rows as $r) {
             $itemId = $r['item_id'];
@@ -150,7 +149,7 @@ require __DIR__ . '/includes/header.php';
 
   <div class="req-intro">
     <?= icon('bell', 16) ?>
-    <span>Stok akan otomatis berkurang begitu permintaan diajukan. Jika permintaan ditolak admin, stok akan dikembalikan otomatis. Pilih satuan sesuai kebutuhan (mis. Box/Kardus) — sistem otomatis mengonversinya.</span>
+    <span>Stok akan otomatis berkurang begitu permintaan diajukan. Jika permintaan ditolak admin, stok akan dikembalikan otomatis. Ketik nama/kode barang untuk mencari, lalu pilih satuan sesuai kebutuhan (mis. Box/Kardus) — sistem otomatis mengonversinya.</span>
   </div>
 
   <?php if (!$items): ?>
@@ -166,7 +165,7 @@ require __DIR__ . '/includes/header.php';
     </div>
 
     <div class="req-rows" id="req-rows"></div>
-    <button type="button" class="req-add-row" id="req-add-row"><?= icon('plus', 14) ?> Tambah barang</button>
+    <button type="button" class="req-add-row" id="req-add-row"><?= icon('plus', 15) ?> Tambah barang</button>
 
     <div class="req-bast-section">
       <label>Berkas BAST (opsional)</label>
@@ -199,6 +198,7 @@ require __DIR__ . '/includes/header.php';
   var rowsWrap = document.getElementById('req-rows');
   var addBtn = document.getElementById('req-add-row');
   var countBadge = document.getElementById('req-count');
+
   if (rowsWrap) {
     var updateCount = function () {
       var n = rowsWrap.children.length;
@@ -213,115 +213,37 @@ require __DIR__ . '/includes/header.php';
       var row = document.createElement('div');
       row.className = 'req-row';
 
+      // ===== Baris atas: nomor + kotak pencarian + tombol hapus =====
+      var top = document.createElement('div');
+      top.className = 'req-row-top';
+
       var numBadge = document.createElement('div');
       numBadge.className = 'req-row-num';
       numBadge.textContent = rowsWrap.children.length + 1;
 
-      var main = document.createElement('div');
-      main.className = 'req-row-main';
+      var searchCol = document.createElement('div');
+      searchCol.className = 'req-row-search-col';
 
-      var mainLabel = document.createElement('label');
-      mainLabel.className = 'req-row-main-label';
-      mainLabel.innerHTML = '&nbsp;';
-      main.appendChild(mainLabel);
+      var acWrap = document.createElement('div');
+      acWrap.className = 'req-ac-wrap';
 
-      var select = document.createElement('select');
-      select.name = 'item_id[]';
-      itemsData.forEach(function (it) {
-        var opt = document.createElement('option');
-        opt.value = it.id;
-        opt.textContent = it.nama + ' (' + it.kode + ')' + (it.stok <= 0 ? ' — habis' : '');
-        opt.dataset.stok = it.stok;
-        opt.dataset.satuan = it.satuan;
-        select.appendChild(opt);
-      });
+      var hiddenItemId = document.createElement('input');
+      hiddenItemId.type = 'hidden';
+      hiddenItemId.name = 'item_id[]';
 
-      var stokInfo = document.createElement('div');
-      stokInfo.className = 'req-row-stok';
-      stokInfo.innerHTML = '<span class="req-row-stok-dot"></span><span class="req-row-stok-text">Tersedia</span><span class="req-row-stok-num"></span>';
+      var searchInput = document.createElement('input');
+      searchInput.type = 'text';
+      searchInput.className = 'req-ac-input';
+      searchInput.placeholder = 'Ketik nama atau kode barang…';
+      searchInput.autocomplete = 'off';
 
-      main.appendChild(select);
-      main.appendChild(stokInfo);
+      var listBox = document.createElement('div');
+      listBox.className = 'req-ac-list';
 
-      // Kolom Satuan
-      var unitWrap = document.createElement('div');
-      unitWrap.className = 'req-unit-wrap';
-      var unitLabel = document.createElement('label');
-      unitLabel.textContent = 'Satuan';
-      var unitSelect = document.createElement('select');
-      var unitConvert = document.createElement('div');
-      unitConvert.className = 'req-unit-convert';
-      unitWrap.appendChild(unitLabel);
-      unitWrap.appendChild(unitSelect);
-      unitWrap.appendChild(unitConvert);
-
-      // Kolom Jumlah
-      var qtyWrap = document.createElement('div');
-      qtyWrap.className = 'req-qty-wrap';
-      var qtyLabel = document.createElement('label');
-      qtyLabel.textContent = 'Jumlah';
-      var qty = document.createElement('input');
-      qty.type = 'number';
-      qty.name = 'jumlah[]';
-      qty.min = '1';
-      qty.value = '1';
-      qtyWrap.appendChild(qtyLabel);
-      qtyWrap.appendChild(qty);
-
-      function populateUnits() {
-        var opt = select.options[select.selectedIndex];
-        var baseSatuan = opt ? (opt.dataset.satuan || 'pcs') : 'pcs';
-        var itemId = opt ? opt.value : null;
-
-        unitSelect.innerHTML = '';
-        unitSelect.name = 'satuan_id[]';
-        var baseOpt = document.createElement('option');
-        baseOpt.value = 'base';
-        baseOpt.textContent = baseSatuan;
-        baseOpt.dataset.faktor = 1;
-        unitSelect.appendChild(baseOpt);
-
-        var alt = satuanByItem[itemId] || [];
-        alt.forEach(function (s) {
-          var o = document.createElement('option');
-          o.value = s.id;
-          o.textContent = s.nama_satuan;
-          o.dataset.faktor = s.isi;
-          unitSelect.appendChild(o);
-        });
-
-        updateStokAndConvert();
-      }
-
-      function updateStokAndConvert() {
-        var opt = select.options[select.selectedIndex];
-        var stok = opt ? parseInt(opt.dataset.stok, 10) || 0 : 0;
-        var baseSatuan = opt ? (opt.dataset.satuan || 'pcs') : 'pcs';
-
-        stokInfo.classList.remove('low', 'empty');
-        if (stok <= 0) stokInfo.classList.add('empty');
-        else if (stok <= 5) stokInfo.classList.add('low');
-        stokInfo.querySelector('.req-row-stok-num').textContent = stok + ' ' + baseSatuan;
-
-        var unitOpt = unitSelect.options[unitSelect.selectedIndex];
-        var faktor = unitOpt ? parseInt(unitOpt.dataset.faktor, 10) || 1 : 1;
-        var jml = parseInt(qty.value, 10) || 0;
-
-        if (faktor > 1) {
-          unitConvert.textContent = '= ' + (jml * faktor) + ' ' + baseSatuan;
-        } else {
-          unitConvert.textContent = '';
-        }
-
-        var maxByUnit = faktor > 0 ? Math.floor(stok / faktor) : stok;
-        qty.max = maxByUnit > 0 ? maxByUnit : 1;
-        if (jml > maxByUnit && maxByUnit > 0) qty.value = maxByUnit;
-      }
-
-      select.addEventListener('change', populateUnits);
-      unitSelect.addEventListener('change', updateStokAndConvert);
-      qty.addEventListener('input', updateStokAndConvert);
-      populateUnits();
+      acWrap.appendChild(searchInput);
+      acWrap.appendChild(hiddenItemId);
+      acWrap.appendChild(listBox);
+      searchCol.appendChild(acWrap);
 
       var removeBtn = document.createElement('button');
       removeBtn.type = 'button';
@@ -334,17 +256,194 @@ require __DIR__ . '/includes/header.php';
         }
       });
 
-      row.appendChild(numBadge);
-      row.appendChild(main);
-      row.appendChild(unitWrap);
-      row.appendChild(qtyWrap);
-      row.appendChild(removeBtn);
+      top.appendChild(numBadge);
+      top.appendChild(searchCol);
+      top.appendChild(removeBtn);
+
+      // ===== Baris bawah: stok + satuan + jumlah =====
+      var bottom = document.createElement('div');
+      bottom.className = 'req-row-bottom';
+
+      var stokCol = document.createElement('div');
+      stokCol.className = 'req-row-stok-col';
+      var stokLabel = document.createElement('div');
+      stokLabel.className = 'req-row-field-label';
+      stokLabel.textContent = 'Ketersediaan';
+      var stokInfo = document.createElement('div');
+      stokInfo.className = 'req-row-stok';
+      stokInfo.innerHTML = '<span class="req-row-stok-dot"></span><span class="req-row-stok-text">Tersedia</span><span class="req-row-stok-num">—</span>';
+      stokCol.appendChild(stokLabel);
+      stokCol.appendChild(stokInfo);
+
+      var unitCol = document.createElement('div');
+      unitCol.className = 'req-unit-col';
+      var unitLabel = document.createElement('div');
+      unitLabel.className = 'req-row-field-label';
+      unitLabel.textContent = 'Satuan';
+      var unitSelect = document.createElement('select');
+      unitSelect.name = 'satuan_id[]';
+      unitSelect.disabled = true;
+      var unitConvert = document.createElement('div');
+      unitConvert.className = 'req-unit-convert';
+      unitCol.appendChild(unitLabel);
+      unitCol.appendChild(unitSelect);
+      unitCol.appendChild(unitConvert);
+
+      var qtyCol = document.createElement('div');
+      qtyCol.className = 'req-qty-col';
+      var qtyLabel = document.createElement('div');
+      qtyLabel.className = 'req-row-field-label';
+      qtyLabel.textContent = 'Jumlah';
+      var qty = document.createElement('input');
+      qty.type = 'number';
+      qty.name = 'jumlah[]';
+      qty.min = '1';
+      qty.value = '1';
+      qty.disabled = true;
+      qtyCol.appendChild(qtyLabel);
+      qtyCol.appendChild(qty);
+
+      bottom.appendChild(stokCol);
+      bottom.appendChild(unitCol);
+      bottom.appendChild(qtyCol);
+
+      row.appendChild(top);
+      row.appendChild(bottom);
       rowsWrap.appendChild(row);
+
+      var selectedItem = null;
+
+      function renderSuggestions(query) {
+        listBox.innerHTML = '';
+        var q = query.trim().toLowerCase();
+        var matches = itemsData.filter(function (it) {
+          return q === '' || it.nama.toLowerCase().indexOf(q) !== -1 || it.kode.toLowerCase().indexOf(q) !== -1;
+        }).slice(0, 30);
+
+        if (!matches.length) {
+          var empty = document.createElement('div');
+          empty.className = 'req-ac-empty';
+          empty.textContent = 'Barang tidak ditemukan.';
+          listBox.appendChild(empty);
+        } else {
+          matches.forEach(function (it) {
+            var opt = document.createElement('div');
+            opt.className = 'req-ac-item';
+            if (it.stok <= 0) opt.classList.add('is-empty');
+            var t = document.createElement('div');
+            t.className = 'req-ac-item-name';
+            t.textContent = it.nama;
+            var s = document.createElement('div');
+            s.className = 'req-ac-item-sub';
+            s.textContent = it.kode + ' · stok ' + it.stok + ' ' + it.satuan + (it.stok <= 0 ? ' (habis)' : '');
+            opt.appendChild(t);
+            opt.appendChild(s);
+            opt.addEventListener('mousedown', function (ev) {
+              ev.preventDefault();
+              selectItem(it);
+            });
+            listBox.appendChild(opt);
+          });
+        }
+        listBox.classList.add('show');
+      }
+
+      function selectItem(it) {
+        selectedItem = it;
+        hiddenItemId.value = it.id;
+        searchInput.value = it.nama + ' (' + it.kode + ')';
+        listBox.classList.remove('show');
+        unitSelect.disabled = false;
+        qty.disabled = false;
+        populateUnits();
+      }
+
+      searchInput.addEventListener('focus', function () {
+        renderSuggestions(searchInput.value.indexOf('(') !== -1 ? '' : searchInput.value);
+      });
+      searchInput.addEventListener('input', function () {
+        if (selectedItem && searchInput.value !== (selectedItem.nama + ' (' + selectedItem.kode + ')')) {
+          selectedItem = null;
+          hiddenItemId.value = '';
+          unitSelect.disabled = true;
+          qty.disabled = true;
+          unitSelect.innerHTML = '';
+          unitConvert.textContent = '';
+          stokInfo.classList.remove('low', 'empty');
+          stokInfo.querySelector('.req-row-stok-num').textContent = '—';
+        }
+        renderSuggestions(searchInput.value);
+      });
+      document.addEventListener('click', function (ev) {
+        if (!acWrap.contains(ev.target)) listBox.classList.remove('show');
+      });
+
+      function populateUnits() {
+        if (!selectedItem) return;
+        var baseSatuan = selectedItem.satuan;
+
+        unitSelect.innerHTML = '';
+        var baseOpt = document.createElement('option');
+        baseOpt.value = 'base';
+        baseOpt.textContent = baseSatuan + ' (satuan dasar)';
+        baseOpt.dataset.faktor = 1;
+        unitSelect.appendChild(baseOpt);
+
+        var alt = satuanByItem[selectedItem.id] || [];
+        alt.forEach(function (s) {
+          var o = document.createElement('option');
+          o.value = s.id;
+          o.textContent = s.nama_satuan + ' (1 ' + s.nama_satuan + ' = ' + s.isi + ' ' + baseSatuan + ')';
+          o.dataset.faktor = s.isi;
+          unitSelect.appendChild(o);
+        });
+
+        updateStokAndConvert();
+      }
+
+      function updateStokAndConvert() {
+        if (!selectedItem) return;
+        var stok = selectedItem.stok;
+        var baseSatuan = selectedItem.satuan;
+
+        stokInfo.classList.remove('low', 'empty');
+        if (stok <= 0) stokInfo.classList.add('empty');
+        else if (stok <= 5) stokInfo.classList.add('low');
+        stokInfo.querySelector('.req-row-stok-num').textContent = stok + ' ' + baseSatuan;
+
+        var unitOpt = unitSelect.options[unitSelect.selectedIndex];
+        var faktor = unitOpt ? parseInt(unitOpt.dataset.faktor, 10) || 1 : 1;
+        var jml = parseInt(qty.value, 10) || 0;
+
+        unitConvert.textContent = faktor > 1 ? ('= ' + (jml * faktor) + ' ' + baseSatuan) : '';
+
+        var maxByUnit = faktor > 0 ? Math.floor(stok / faktor) : stok;
+        qty.max = maxByUnit > 0 ? maxByUnit : 1;
+        if (jml > maxByUnit && maxByUnit > 0) qty.value = maxByUnit;
+      }
+
+      unitSelect.addEventListener('change', updateStokAndConvert);
+      qty.addEventListener('input', updateStokAndConvert);
+
       updateCount();
     };
 
     addBtn.addEventListener('click', addRow);
     addRow();
+  }
+
+  // ---------- Validasi sebelum submit ----------
+  var reqForm = document.getElementById('req-form');
+  if (reqForm) {
+    reqForm.addEventListener('submit', function (ev) {
+      var hiddenIds = rowsWrap.querySelectorAll('input[name="item_id[]"]');
+      var allFilled = true;
+      hiddenIds.forEach(function (h) { if (!h.value) allFilled = false; });
+      if (!allFilled) {
+        ev.preventDefault();
+        alert('Ada baris barang yang belum dipilih. Klik kotak pencarian dan pilih barangnya dari daftar.');
+      }
+    });
   }
 
   // ---------- Preview berkas BAST sebelum kirim ----------

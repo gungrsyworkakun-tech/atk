@@ -409,102 +409,12 @@ details summary{list-style:none;}
 .bast-mini-form{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .bast-mini-form input[type=file]{font-size:11.5px;max-width:150px;}
 
-/* ---------- form ajukan permintaan (permintaan.php) ---------- */
-.req-intro{display:flex;gap:10px;align-items:flex-start;background:var(--c-blue-bg);
-  border:1px solid rgba(59,130,246,.25);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:18px;
-  font-size:12.5px;color:var(--text-dim);}
-.req-intro svg{flex-shrink:0;margin-top:1px;color:var(--accent);}
-
-.req-section-label{font-size:11.5px;font-weight:700;color:var(--text-dim);text-transform:uppercase;
-  letter-spacing:.04em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
-.req-count{font-weight:700;background:var(--c-blue-bg);color:var(--accent);padding:2px 9px;border-radius:20px;
-  font-size:11px;}
-
-.req-rows{display:flex;flex-direction:column;gap:10px;}
-.req-row{display:grid;grid-template-columns:28px 1fr 150px 130px 36px;gap:10px;align-items:start;
-  background:var(--paper-sunk);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px;
-  transition:border-color .15s var(--ease);}
-.req-row:focus-within{border-color:var(--accent);}
-.req-row-num{width:26px;height:26px;border-radius:50%;background:var(--paper-card);border:1px solid var(--line);
-  display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;color:var(--text-dim);
-  flex-shrink:0;margin-top:16px;}
-.req-row-main{min-width:0;display:flex;flex-direction:column;gap:7px;}
-.req-row-main-label{font-size:10.5px;height:13px;line-height:13px;color:var(--text-dim);text-transform:uppercase;
-  letter-spacing:.03em;}
-.req-row select{width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;
-  background:var(--paper-card);color:var(--text);font-size:13px;height:37px;font-family:'Inter',Arial,sans-serif;}
-.req-row select:focus{outline:none;border-color:var(--accent);}
-
-.req-row-stok{display:inline-flex;align-items:center;gap:6px;width:fit-content;background:var(--teal-light);
-  border-radius:8px;padding:4px 9px;}
-.req-row-stok.low{background:var(--ochre-light);}
-.req-row-stok.empty{background:var(--red-light);}
-.req-row-stok-dot{width:6px;height:6px;border-radius:50%;background:var(--teal-dark);flex-shrink:0;}
-.req-row-stok.low .req-row-stok-dot{background:var(--ochre-dark);}
-.req-row-stok.empty .req-row-stok-dot{background:var(--red-dark);}
-.req-row-stok-text{font-size:11px;color:var(--text-dim);}
-.req-row-stok-num{font-size:12.5px;font-weight:800;color:var(--teal-dark);font-variant-numeric:tabular-nums;}
-.req-row-stok.low .req-row-stok-num{color:var(--ochre-dark);}
-.req-row-stok.empty .req-row-stok-num{color:var(--red-dark);}
-
-/* Kotak pencarian barang (autocomplete) — pengganti dropdown biasa */
-.req-ac-wrap{position:relative;}
-.req-ac-input{width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;
-  background:var(--paper-card);color:var(--text);font-size:13px;height:37px;box-sizing:border-box;
-  font-family:'Inter',Arial,sans-serif;}
-.req-ac-input:focus{outline:none;border-color:var(--accent);}
-.req-ac-list{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:260px;
-  overflow-y:auto;background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius-sm);
-  box-shadow:var(--shadow-pop);z-index:60;padding:5px;}
-.req-ac-list.show{display:block;}
-.req-ac-item{padding:8px 9px;border-radius:8px;cursor:pointer;}
-.req-ac-item:hover{background:var(--paper-sunk);}
-.req-ac-item.is-empty{opacity:.55;}
-.req-ac-item-name{font-size:13px;font-weight:600;}
-.req-ac-item-sub{font-size:11.5px;color:var(--text-dim);margin-top:1px;}
-.req-ac-empty{padding:10px 9px;font-size:12.5px;color:var(--text-dim);}
-
-.req-unit-wrap{display:flex;flex-direction:column;gap:5px;}
-.req-unit-wrap label{font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.03em;
-  height:13px;line-height:13px;}
-.req-unit-wrap select{font-weight:600;}
-.req-unit-wrap select:disabled{opacity:.5;cursor:not-allowed;}
-.req-unit-convert{font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:600;color:var(--accent);
-  min-height:13px;margin-top:2px;}
-
-.req-qty-wrap{display:flex;flex-direction:column;gap:5px;}
-.req-qty-wrap label{font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.03em;
-  height:13px;line-height:13px;}
-.req-row input[type=number]{width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;
-  background:var(--paper-card);color:var(--text);font-size:13px;font-weight:700;text-align:center;
-  height:37px;box-sizing:border-box;font-family:'Inter',Arial,sans-serif;}
-.req-row input[type=number]:focus{outline:none;border-color:var(--accent);}
-.req-row input[type=number]:disabled{opacity:.5;cursor:not-allowed;}
-
-.req-row-remove{border:none;background:transparent;color:var(--text-dim);cursor:pointer;font-size:15px;
-  width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;margin-top:16px;transition:background .12s var(--ease), color .12s var(--ease);}
-.req-row-remove:hover{background:var(--red-light);color:var(--red-dark);}
-
-.req-add-row{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:10px;
-  padding:10px;border-radius:var(--radius-sm);border:1.5px dashed var(--line);background:transparent;
-  color:var(--text-dim);font-size:12.5px;font-weight:600;cursor:pointer;
-  transition:border-color .15s var(--ease), color .15s var(--ease);}
-.req-add-row:hover{border-color:var(--accent);color:var(--accent);}
-
-.req-bast-section{margin-top:20px;padding-top:18px;border-top:1px solid var(--line-soft);}
-.req-bast-section label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;
-  letter-spacing:.03em;display:block;margin-bottom:8px;}
-
-.req-footer{display:flex;gap:16px;align-items:flex-end;justify-content:space-between;margin-top:22px;
-  padding-top:18px;border-top:1px solid var(--line-soft);flex-wrap:wrap;}
-.req-pj-field{flex:1;min-width:220px;max-width:340px;}
-.req-pj-field label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;
-  letter-spacing:.03em;display:block;margin-bottom:6px;}
-.req-pj-field input{width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:var(--radius-sm);
-  background:var(--paper-sunk);color:var(--text);font-size:13.5px;font-family:'Inter',Arial,sans-serif;}
-.req-pj-field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.16);}
-.req-submit-btn{padding:11px 22px;font-size:13.5px;font-weight:700;}
+/* ---------- badge status permintaan ---------- */
+.st-badge{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;}
+.st-menunggu{background:var(--ochre-light);color:var(--ochre-dark);}
+.st-diproses{background:var(--c-blue-bg);color:var(--accent);}
+.st-selesai{background:var(--teal-light);color:var(--teal-dark);}
+.st-ditolak{background:var(--red-light);color:var(--red-dark);}
 
 /* ---------- kartu permintaan (progres.php, kelola_permintaan.php) ---------- */
 .pq-card{border:1px solid var(--line);border-radius:var(--radius);padding:16px;background:var(--paper-card);
@@ -515,20 +425,13 @@ details summary{list-style:none;}
 .pq-sub{font-size:12px;color:var(--text-dim);margin-top:2px;}
 .pq-items{margin-top:10px;font-size:13px;}
 .pq-items li{margin-bottom:2px;}
+.pq-items .unit-note{color:var(--text-faint);font-size:11.5px;margin-left:4px;}
 .pq-note{margin-top:10px;font-size:12.5px;background:var(--paper-sunk);border-radius:var(--radius-sm);
   padding:8px 10px;}
-
 .pq-form{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;
   border-top:1px solid var(--line-soft);padding-top:12px;}
 .pq-form .field{margin:0;}
 .pq-form select,.pq-form input{min-width:160px;}
-
-/* ---------- badge status permintaan ---------- */
-.st-badge{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;}
-.st-menunggu{background:var(--ochre-light);color:var(--ochre-dark);}
-.st-diproses{background:var(--c-blue-bg);color:var(--accent);}
-.st-selesai{background:var(--teal-light);color:var(--teal-dark);}
-.st-ditolak{background:var(--red-light);color:var(--red-dark);}
 
 /* ---------- kartu Input BAST (input_bast.php) ---------- */
 .ib-card{border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;background:var(--paper-card);
@@ -560,35 +463,177 @@ details summary{list-style:none;}
 
 /* ============================================================
    BAGIAN 3: SATUAN BARANG FLEKSIBEL
-   (data_barang.php, transaksi.php, permintaan.php)
+   (data_barang.php, transaksi.php)
    ============================================================ */
 
-/* Badge satuan dasar di tabel Data Barang */
 .unit-badge{display:inline-flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',monospace;
   font-size:10.5px;padding:3px 9px;border-radius:12px;text-transform:lowercase;letter-spacing:.02em;
   font-weight:700;background:var(--c-indigo-bg);color:var(--c-indigo);}
 .unit-extra-count{font-size:11px;color:var(--text-faint);margin-left:6px;}
-
-/* Card "Kelola satuan turunan" di data_barang.php */
 .unit-table td:nth-child(2){font-size:12.5px;color:var(--text-dim);}
 .unit-hint-box{background:var(--paper-sunk);border:1px solid var(--line-soft);border-radius:var(--radius-sm);
   padding:10px 12px;font-size:12.5px;color:var(--text-dim);margin-bottom:16px;line-height:1.55;}
-
-/* Field Satuan & info konversi di form transaksi (transaksi.php) */
 #satuan-select{font-weight:600;}
 #satuan-convert-info{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--accent);min-height:15px;}
 #satuan-convert-info:empty{margin-top:0;}
-
-/* Jumlah satuan dalam tabel riwayat transaksi */
 td .unit-suffix{color:var(--text-dim);font-weight:500;margin-left:3px;font-family:'Inter',Arial,sans-serif;}
 
-/* Info satuan di list item permintaan (progres.php, kelola_permintaan.php) */
-.pq-items .unit-note{color:var(--text-faint);font-size:11.5px;margin-left:4px;}
+
+/* ============================================================
+   BAGIAN 4: FORM PERMINTAAN ATK (permintaan.php)
+   Kartu barang modern — pencarian + satuan + jumlah
+   ============================================================ */
+
+.req-intro{
+  display:flex;gap:12px;align-items:flex-start;background:var(--c-blue-bg);
+  border:1px solid rgba(59,130,246,.25);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:20px;
+  font-size:12.5px;color:var(--text-dim);line-height:1.55;
+}
+.req-intro svg{flex-shrink:0;margin-top:1px;color:var(--accent);}
+
+.req-section-label{
+  font-size:11.5px;font-weight:700;color:var(--text-dim);text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;
+}
+.req-count{
+  font-weight:700;background:var(--c-blue-bg);color:var(--accent);padding:3px 10px;border-radius:20px;
+  font-size:11px;
+}
+
+.req-rows{display:flex;flex-direction:column;gap:14px;}
+
+.req-row{
+  position:relative;
+  background:var(--paper-sunk);
+  border:1.5px solid var(--line);
+  border-radius:var(--radius);
+  padding:16px;
+  transition:border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.req-row:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.12);}
+
+.req-row-top{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.req-row-num{
+  width:28px;height:28px;border-radius:50%;background:var(--paper-card);border:1.5px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--text-dim);
+  flex-shrink:0;
+}
+.req-row-search-col{flex:1;min-width:0;}
+
+.req-ac-wrap{position:relative;}
+.req-ac-input{
+  display:block;width:100%;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;
+  background-color:var(--paper-card);color:var(--text);font-size:14px;font-weight:500;
+  height:42px;box-sizing:border-box;font-family:'Inter',Arial,sans-serif;
+  transition:border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.req-ac-input::placeholder{color:var(--text-faint);font-weight:400;}
+.req-ac-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.16);}
+
+.req-ac-list{
+  display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;max-height:280px;
+  overflow-y:auto;background:var(--paper-card);border:1.5px solid var(--line);border-radius:var(--radius-sm);
+  box-shadow:var(--shadow-pop);z-index:100;padding:6px;
+}
+.req-ac-list.show{display:block;}
+.req-ac-item{padding:10px 11px;border-radius:9px;cursor:pointer;transition:background .12s var(--ease);}
+.req-ac-item + .req-ac-item{margin-top:2px;}
+.req-ac-item:hover{background:var(--paper-sunk);}
+.req-ac-item.is-empty{opacity:.5;}
+.req-ac-item-name{font-size:13.5px;font-weight:600;color:var(--text);line-height:1.3;}
+.req-ac-item-sub{font-size:11.5px;color:var(--text-dim);margin-top:2px;font-family:'IBM Plex Mono',monospace;}
+.req-ac-empty{padding:16px 10px;font-size:12.5px;color:var(--text-dim);text-align:center;}
+
+.req-row-remove{
+  border:none;background:transparent;color:var(--text-faint);cursor:pointer;font-size:16px;
+  width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;transition:background .12s var(--ease), color .12s var(--ease);
+}
+.req-row-remove:hover{background:var(--red-light);color:var(--red-dark);}
+
+.req-row-bottom{
+  display:grid;
+  grid-template-columns:1fr 200px 100px;
+  align-items:start;
+  gap:16px;
+  padding-top:14px;border-top:1px dashed var(--line-soft);
+}
+
+.req-row-stok-col{min-width:0;}
+.req-row-field-label{
+  font-size:10.5px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;
+  margin-bottom:7px;display:block;
+}
+.req-row-stok{
+  display:inline-flex;align-items:center;gap:7px;width:fit-content;background:var(--teal-light);
+  border-radius:9px;padding:0 12px;height:40px;box-sizing:border-box;
+}
+.req-row-stok.low{background:var(--ochre-light);}
+.req-row-stok.empty{background:var(--red-light);}
+.req-row-stok-dot{width:7px;height:7px;border-radius:50%;background:var(--teal-dark);flex-shrink:0;}
+.req-row-stok.low .req-row-stok-dot{background:var(--ochre-dark);}
+.req-row-stok.empty .req-row-stok-dot{background:var(--red-dark);}
+.req-row-stok-text{font-size:11.5px;color:var(--text-dim);}
+.req-row-stok-num{font-size:13px;font-weight:800;color:var(--teal-dark);font-variant-numeric:tabular-nums;}
+.req-row-stok.low .req-row-stok-num{color:var(--ochre-dark);}
+.req-row-stok.empty .req-row-stok-num{color:var(--red-dark);}
+
+.req-unit-col{min-width:0;}
+.req-unit-col select{
+  width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;
+  background-color:var(--paper-card);color:var(--text);font-size:12.5px;font-weight:600;
+  height:40px;box-sizing:border-box;font-family:'Inter',Arial,sans-serif;
+  transition:border-color .15s var(--ease);
+}
+.req-unit-col select:focus{outline:none;border-color:var(--accent);}
+.req-unit-col select:disabled{opacity:.45;cursor:not-allowed;}
+.req-unit-convert{
+  font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;color:var(--accent);
+  min-height:14px;margin-top:6px;
+}
+
+.req-qty-col{min-width:0;}
+.req-qty-col input[type=number]{
+  width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;
+  background-color:var(--paper-card);color:var(--text);font-size:14px;font-weight:700;text-align:center;
+  height:40px;box-sizing:border-box;font-family:'Inter',Arial,sans-serif;
+  transition:border-color .15s var(--ease);
+}
+.req-qty-col input[type=number]:focus{outline:none;border-color:var(--accent);}
+.req-qty-col input[type=number]:disabled{opacity:.45;cursor:not-allowed;}
+
+.req-add-row{
+  display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:4px;
+  padding:13px;border-radius:var(--radius-sm);border:1.5px dashed var(--line);background:transparent;
+  color:var(--text-dim);font-size:13px;font-weight:600;cursor:pointer;
+  font-family:'Inter',Arial,sans-serif;
+  transition:border-color .15s var(--ease), color .15s var(--ease), background .15s var(--ease);
+}
+.req-add-row:hover{border-color:var(--accent);color:var(--accent);background:var(--c-blue-bg);}
+
+.req-bast-section{margin-top:24px;padding-top:20px;border-top:1px solid var(--line-soft);}
+.req-bast-section > label{
+  font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;
+  letter-spacing:.03em;display:block;margin-bottom:10px;
+}
+
+.req-footer{
+  display:flex;gap:16px;align-items:flex-end;justify-content:space-between;margin-top:24px;
+  padding-top:20px;border-top:1px solid var(--line-soft);flex-wrap:wrap;
+}
+.req-pj-field{flex:1;min-width:220px;max-width:340px;}
+.req-pj-field label{
+  font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;
+  letter-spacing:.03em;display:block;margin-bottom:7px;
+}
+.req-pj-field input{
+  width:100%;padding:10px 13px;border:1.5px solid var(--line);border-radius:var(--radius-sm);
+  background-color:var(--paper-sunk);color:var(--text);font-size:13.5px;font-family:'Inter',Arial,sans-serif;
+  box-sizing:border-box;transition:border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.req-pj-field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.16);}
+.req-submit-btn{padding:12px 24px;font-size:13.5px;font-weight:700;}
 
 @media (max-width:640px){
-  .req-row{grid-template-columns:24px 1fr;}
-  .req-row-num{grid-row:1;grid-column:1;}
-  .req-row-main{grid-row:1;grid-column:2;}
-  .req-unit-wrap,.req-qty-wrap{grid-column:1 / -1;}
-  .req-row-remove{grid-row:1;grid-column:2;justify-self:end;margin-top:0;}
+  .req-row-bottom{grid-template-columns:1fr;}
 }
