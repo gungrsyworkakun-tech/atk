@@ -56,6 +56,7 @@ require __DIR__ . '/includes/header.php';
   .cat-action{margin-top:auto;padding-top:8px;}
   .cat-action .btn{width:100%;font-size:12.5px;padding:8px 10px;}
   .cat-action .btn[disabled]{opacity:.5;cursor:not-allowed;}
+  .cat-action .btn.is-added{background:var(--teal-dark);border-color:var(--teal-dark);}
 </style>
 
 <div class="topline">
@@ -105,7 +106,7 @@ require __DIR__ . '/includes/header.php';
         <?php endif; ?>
         <div class="cat-action">
           <?php if ($stok > 0): ?>
-            <a class="btn btn-primary" href="permintaan.php?item_id=<?= (int)$it['id'] ?>">Ajukan</a>
+            <button type="button" class="btn btn-primary js-add-cart" data-id="<?= (int)$it['id'] ?>">Ajukan</button>
           <?php else: ?>
             <button class="btn btn-ghost" disabled>Stok Habis</button>
           <?php endif; ?>
@@ -115,5 +116,32 @@ require __DIR__ . '/includes/header.php';
   <?php endforeach; ?>
 </div>
 <?php endif; ?>
+
+<script>
+(function () {
+  var CART_KEY = 'atk_req_cart';
+
+  document.querySelectorAll('.js-add-cart').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.dataset.id;
+      var cart = [];
+      try { cart = JSON.parse(localStorage.getItem(CART_KEY) || '[]'); } catch (e) { cart = []; }
+
+      var existing = cart.find(function (c) { return String(c.item_id) === String(id); });
+      if (existing) {
+        existing.jumlah = (parseInt(existing.jumlah, 10) || 1) + 1;
+      } else {
+        cart.push({ item_id: id, satuan_id: 'base', jumlah: 1 });
+      }
+
+      try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) {}
+
+      btn.textContent = 'Ditambahkan ✓';
+      btn.classList.add('is-added');
+      setTimeout(function () { window.location.href = 'permintaan.php'; }, 250);
+    });
+  });
+})();
+</script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

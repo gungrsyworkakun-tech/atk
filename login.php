@@ -3,25 +3,93 @@ require __DIR__ . '/includes/bootstrap.php';
 
 if (is_logged_in()) redirect('index.php');
 
+// ---------------- Header keamanan dasar ----------------
+header('X-Frame-Options: DENY');
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+
+// ---------------- Proteksi brute-force (rate limiting berbasis IP) ----------------
+$rlDir = __DIR__ . '/data/';
+if (!is_dir($rlDir)) @mkdir($rlDir, 0755, true);
+$rlFile = $rlDir . 'login_attempts.json';
+$rlMaxAttempt = 5;      // maksimal percobaan gagal
+$rlWindow = 15 * 60;    // dalam jendela waktu 15 menit
+$rlLockDuration = 5 * 60; // dikunci selama 5 menit
+
+function rl_load($rlFile) {
+    if (!is_file($rlFile)) return [];
+    $data = json_decode((string)@file_get_contents($rlFile), true);
+    return is_array($data) ? $data : [];
+}
+function rl_save($rlFile, $data) {
+    @file_put_contents($rlFile, json_encode($data), LOCK_EX);
+}
+function rl_key() {
+    return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+}
+function rl_status($rlFile) {
+    $data = rl_load($rlFile);
+    $entry = $data[rl_key()] ?? null;
+    if ($entry && $entry['locked_until'] > time()) {
+        return $entry['locked_until'] - time();
+    }
+    return 0;
+}
+function rl_register_fail($rlFile, $rlMaxAttempt, $rlWindow, $rlLockDuration) {
+    $data = rl_load($rlFile);
+    $key = rl_key();
+    $now = time();
+    $entry = $data[$key] ?? ['count' => 0, 'first' => $now, 'locked_until' => 0];
+    if ($now - $entry['first'] > $rlWindow) {
+        $entry = ['count' => 0, 'first' => $now, 'locked_until' => 0];
+    }
+    $entry['count']++;
+    if ($entry['count'] >= $rlMaxAttempt) {
+        $entry['locked_until'] = $now + $rlLockDuration;
+    }
+    $data[$key] = $entry;
+    rl_save($rlFile, $data);
+}
+function rl_register_success($rlFile) {
+    $data = rl_load($rlFile);
+    unset($data[rl_key()]);
+    rl_save($rlFile, $data);
+}
+
+$lockRemaining = rl_status($rlFile);
+
 $error = '';
+if ($lockRemaining > 0) {
+    $error = 'Terlalu banyak percobaan login gagal dari perangkat ini. Coba lagi dalam ' . ceil($lockRemaining / 60) . ' menit.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $stmt = $pdo->prepare('SELECT * FROM users WHERE username = ?');
-    $stmt->execute([$username]);
-    $row = $stmt->fetch();
-    if ($row && password_verify($password, $row['password'])) {
-        $_SESSION['user'] = [
-            'id' => $row['id'],
-            'username' => $row['username'],
-            'role' => $row['role'],
-            'permissions' => decode_permissions($row['permissions']),
-            'bidang_nama' => $row['bidang_nama'] ?? null,
-        ];
-        redirect('index.php');
+    if ($lockRemaining > 0) {
+        // Sudah terkunci: jangan proses kredensial sama sekali.
     } else {
-        $error = 'Nama pengguna atau kata sandi salah.';
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $stmt = $pdo->prepare('SELECT * FROM users WHERE username = ?');
+        $stmt->execute([$username]);
+        $row = $stmt->fetch();
+        if ($row && password_verify($password, $row['password'])) {
+            rl_register_success($rlFile);
+            // Regenerasi session ID untuk mencegah session fixation.
+            session_regenerate_id(true);
+            $_SESSION['user'] = [
+                'id' => $row['id'],
+                'username' => $row['username'],
+                'role' => $row['role'],
+                'permissions' => decode_permissions($row['permissions']),
+                'bidang_nama' => $row['bidang_nama'] ?? null,
+            ];
+            redirect('index.php');
+        } else {
+            rl_register_fail($rlFile, $rlMaxAttempt, $rlWindow, $rlLockDuration);
+            usleep(400000); // jeda kecil, perlambat percobaan otomatis
+            $error = 'Nama pengguna atau kata sandi salah.';
+        }
     }
 }
 ?>
@@ -31,7 +99,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Masuk — Pendataan ATK</title>
-    
+    <link rel="icon" type="image/png" href="assets/1.png">
+    <link rel="shortcut icon" type="image/png" href="assets/1.png">
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -238,9 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="auth-header">
             <!-- Logo dari sebelumnya -->
             <div class="brand-icon-box">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                </svg>
+                <img src="assets/1.png" alt="Logo Pendataan ATK" style="width:28px;height:28px;object-fit:contain;">
             </div>
             <h1>Masuk ke Akun Anda</h1>
             <p>Pendataan ATK & Sistem Inventaris</p>
@@ -268,7 +336,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="field-header">
                         <label for="username">Nama pengguna</label>
                     </div>
-                    <input id="username" name="username" placeholder="Masukkan nama pengguna" required autofocus>
+                    <input id="username" name="username" placeholder="Masukkan nama pengguna" required autofocus maxlength="50" <?= $lockRemaining > 0 ? 'disabled' : '' ?>>
                 </div>
 
                 <!-- Field Password -->
@@ -276,7 +344,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="field-header">
                         <label for="password">Kata sandi</label>
                     </div>
-                    <input type="password" id="password" name="password" placeholder="Masukkan kata sandi" required>
+                    <input type="password" id="password" name="password" placeholder="Masukkan kata sandi" required <?= $lockRemaining > 0 ? 'disabled' : '' ?>>
                 </div>
 
                 <!-- Checkbox Remember Me -->
@@ -286,7 +354,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <!-- Tombol Submit -->
-                <button class="btn btn-primary btn-block" type="submit">Masuk</button>
+                <button class="btn btn-primary btn-block" type="submit" <?= $lockRemaining > 0 ? 'disabled' : '' ?>>Masuk</button>
 
                 <!-- Hint Info Akun Bawaan dari Kode Baru -->
                 </div>

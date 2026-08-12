@@ -11,6 +11,7 @@ foreach (MODULES as $key => $label) {
 }
 $pageLabels['kelola_admin.php'] = 'Kelola Admin';
 $pageLabels['kelola_bidang.php'] = 'Kelola Bidang';
+$pageLabels['analitik.php'] = 'Dashboard Analitik';
 $pageLabels['katalog.php'] = 'Katalog Barang';
 $pageLabels['permintaan.php'] = 'Permintaan ATK';
 $pageLabels['progres.php'] = 'Progres ATK';
@@ -71,6 +72,7 @@ function nav_item($file, $label, $iconName) {
         <div class="nav-group">
           <div class="nav-group-label">Menu Utama</div>
           <?php nav_item('index.php', 'Dashboard', 'grid'); ?>
+          <?php nav_item('analitik.php', 'Dashboard Analitik', 'gauge'); ?>
         </div>
 
         <?php if (has_permission('barang_masuk_keluar') || has_permission('barcode') || has_permission('data_barang') || has_permission('bast') || has_permission('realisasi') || has_permission('harga') || has_permission('bidang') || has_permission('kelola_permintaan')): ?>

@@ -139,6 +139,11 @@ $satuanByItem = [];
 foreach ($allSatuan as $s) $satuanByItem[$s['item_id']][] = $s;
 
 require __DIR__ . '/includes/header.php';
+
+// Kalau baru saja berhasil mengajukan permintaan, bersihkan draft/keranjang tersimpan di browser.
+if (!empty($flash) && $flash['type'] === 'ok' && strpos($flash['msg'], 'diajukan') !== false) {
+    echo '<script>try { localStorage.removeItem(\'atk_req_cart\'); } catch(e){}</script>';
+}
 ?>
 <div class="topline">
   <div><h1>Permintaan ATK</h1><div class="sub">Ajukan kebutuhan ATK untuk bidang <?= e($u['bidang_nama'] ?? '-') ?></div></div>
@@ -149,7 +154,7 @@ require __DIR__ . '/includes/header.php';
 
   <div class="req-intro">
     <?= icon('bell', 16) ?>
-    <span>Stok akan otomatis berkurang begitu permintaan diajukan. Jika permintaan ditolak admin, stok akan dikembalikan otomatis. Ketik nama/kode barang untuk mencari, lalu pilih satuan sesuai kebutuhan (mis. Box/Kardus) — sistem otomatis mengonversinya.</span>
+    <span>Stok akan otomatis berkurang begitu permintaan diajukan. Jika permintaan ditolak admin, stok akan dikembalikan otomatis. Barang yang dipilih dari Katalog otomatis tersimpan di sini, meski Anda pindah halaman terlebih dahulu.</span>
   </div>
 
   <?php if (!$items): ?>
@@ -190,6 +195,8 @@ require __DIR__ . '/includes/header.php';
 
 <script>
 (function () {
+  var CART_KEY = 'atk_req_cart';
+
   var itemsData = <?= json_encode(array_map(function ($it) {
       return ['id' => $it['id'], 'nama' => $it['nama'], 'kode' => $it['kode'], 'satuan' => $it['satuan'], 'stok' => (int)$it['stok']];
   }, $items)) ?>;
@@ -198,251 +205,291 @@ require __DIR__ . '/includes/header.php';
   var rowsWrap = document.getElementById('req-rows');
   var addBtn = document.getElementById('req-add-row');
   var countBadge = document.getElementById('req-count');
+  if (!rowsWrap) return;
 
-  if (rowsWrap) {
-    var updateCount = function () {
-      var n = rowsWrap.children.length;
-      countBadge.textContent = n + ' item';
-      Array.prototype.forEach.call(rowsWrap.children, function (row, idx) {
-        var num = row.querySelector('.req-row-num');
-        if (num) num.textContent = idx + 1;
-      });
-    };
+  function readCart() {
+    try { return JSON.parse(localStorage.getItem(CART_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function writeCart(cart) {
+    try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) {}
+  }
 
-    var addRow = function () {
-      var isFirstRow = rowsWrap.children.length === 0;
+  function updateCount() {
+    var n = rowsWrap.children.length;
+    countBadge.textContent = n + ' item';
+    Array.prototype.forEach.call(rowsWrap.children, function (row, idx) {
+      var num = row.querySelector('.req-row-num');
+      if (num) num.textContent = idx + 1;
+    });
+  }
 
-      var row = document.createElement('div');
-      row.className = 'req-row';
-
-      // ===== Baris atas: nomor + kotak pencarian + tombol hapus =====
-      var top = document.createElement('div');
-      top.className = 'req-row-top';
-
-      var numBadge = document.createElement('div');
-      numBadge.className = 'req-row-num';
-      numBadge.textContent = rowsWrap.children.length + 1;
-
-      var searchCol = document.createElement('div');
-      searchCol.className = 'req-row-search-col';
-
-      var acWrap = document.createElement('div');
-      acWrap.className = 'req-ac-wrap';
-
-      var hiddenItemId = document.createElement('input');
-      hiddenItemId.type = 'hidden';
-      hiddenItemId.name = 'item_id[]';
-
-      var searchInput = document.createElement('input');
-      searchInput.type = 'text';
-      searchInput.className = 'req-ac-input';
-      searchInput.placeholder = 'Ketik nama atau kode barang…';
-      searchInput.autocomplete = 'off';
-
-      var listBox = document.createElement('div');
-      listBox.className = 'req-ac-list';
-
-      acWrap.appendChild(searchInput);
-      acWrap.appendChild(hiddenItemId);
-      acWrap.appendChild(listBox);
-      searchCol.appendChild(acWrap);
-
-      var removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'req-row-remove';
-      removeBtn.innerHTML = '✕';
-      removeBtn.addEventListener('click', function () {
-        if (rowsWrap.children.length > 1) {
-          row.remove();
-          updateCount();
-        }
-      });
-
-      top.appendChild(numBadge);
-      top.appendChild(searchCol);
-      top.appendChild(removeBtn);
-
-      // ===== Baris bawah: stok + satuan + jumlah =====
-      var bottom = document.createElement('div');
-      bottom.className = 'req-row-bottom';
-
-      var stokCol = document.createElement('div');
-      stokCol.className = 'req-row-stok-col';
-      var stokLabel = document.createElement('div');
-      stokLabel.className = 'req-row-field-label';
-      stokLabel.textContent = 'Ketersediaan';
-      var stokInfo = document.createElement('div');
-      stokInfo.className = 'req-row-stok';
-      stokInfo.innerHTML = '<span class="req-row-stok-dot"></span><span class="req-row-stok-text">Tersedia</span><span class="req-row-stok-num">—</span>';
-      stokCol.appendChild(stokLabel);
-      stokCol.appendChild(stokInfo);
-
-      var unitCol = document.createElement('div');
-      unitCol.className = 'req-unit-col';
-      var unitLabel = document.createElement('div');
-      unitLabel.className = 'req-row-field-label';
-      unitLabel.textContent = 'Satuan';
-      var unitSelect = document.createElement('select');
-      unitSelect.name = 'satuan_id[]';
-      unitSelect.disabled = true;
-      var unitConvert = document.createElement('div');
-      unitConvert.className = 'req-unit-convert';
-      unitCol.appendChild(unitLabel);
-      unitCol.appendChild(unitSelect);
-      unitCol.appendChild(unitConvert);
-
-      var qtyCol = document.createElement('div');
-      qtyCol.className = 'req-qty-col';
-      var qtyLabel = document.createElement('div');
-      qtyLabel.className = 'req-row-field-label';
-      qtyLabel.textContent = 'Jumlah';
-      var qty = document.createElement('input');
-      qty.type = 'number';
-      qty.name = 'jumlah[]';
-      qty.min = '1';
-      qty.value = '1';
-      qty.disabled = true;
-      qtyCol.appendChild(qtyLabel);
-      qtyCol.appendChild(qty);
-
-      bottom.appendChild(stokCol);
-      bottom.appendChild(unitCol);
-      bottom.appendChild(qtyCol);
-
-      row.appendChild(top);
-      row.appendChild(bottom);
-      rowsWrap.appendChild(row);
-
-      var selectedItem = null;
-
-      function renderSuggestions(query) {
-        listBox.innerHTML = '';
-        var q = query.trim().toLowerCase();
-        var matches = itemsData.filter(function (it) {
-          return q === '' || it.nama.toLowerCase().indexOf(q) !== -1 || it.kode.toLowerCase().indexOf(q) !== -1;
-        }).slice(0, 30);
-
-        if (!matches.length) {
-          var empty = document.createElement('div');
-          empty.className = 'req-ac-empty';
-          empty.textContent = 'Barang tidak ditemukan.';
-          listBox.appendChild(empty);
-        } else {
-          matches.forEach(function (it) {
-            var opt = document.createElement('div');
-            opt.className = 'req-ac-item';
-            if (it.stok <= 0) opt.classList.add('is-empty');
-            var t = document.createElement('div');
-            t.className = 'req-ac-item-name';
-            t.textContent = it.nama;
-            var s = document.createElement('div');
-            s.className = 'req-ac-item-sub';
-            s.textContent = it.kode + ' · stok ' + it.stok + ' ' + it.satuan + (it.stok <= 0 ? ' (habis)' : '');
-            opt.appendChild(t);
-            opt.appendChild(s);
-            opt.addEventListener('mousedown', function (ev) {
-              ev.preventDefault();
-              selectItem(it);
-            });
-            listBox.appendChild(opt);
-          });
-        }
-        listBox.classList.add('show');
+  // Simpan kondisi baris saat ini (barang, satuan, jumlah) ke localStorage, supaya
+  // tetap ada meski user pindah tab/halaman lain lalu kembali lagi ke sini.
+  function persistState() {
+    var state = [];
+    Array.prototype.forEach.call(rowsWrap.children, function (row) {
+      var hid = row.querySelector('input[name="item_id[]"]');
+      var usel = row.querySelector('select[name="satuan_id[]"]');
+      var qin = row.querySelector('input[name="jumlah[]"]');
+      if (hid && hid.value) {
+        state.push({ item_id: hid.value, satuan_id: usel ? usel.value : 'base', jumlah: qin ? qin.value : 1 });
       }
+    });
+    writeCart(state);
+  }
 
-      function selectItem(it) {
-        selectedItem = it;
-        hiddenItemId.value = it.id;
-        searchInput.value = it.nama + ' (' + it.kode + ')';
-        listBox.classList.remove('show');
+  var addRow = function (preset) {
+    var row = document.createElement('div');
+    row.className = 'req-row';
+
+    var top = document.createElement('div');
+    top.className = 'req-row-top';
+
+    var numBadge = document.createElement('div');
+    numBadge.className = 'req-row-num';
+    numBadge.textContent = rowsWrap.children.length + 1;
+
+    var searchCol = document.createElement('div');
+    searchCol.className = 'req-row-search-col';
+
+    var acWrap = document.createElement('div');
+    acWrap.className = 'req-ac-wrap';
+
+    var hiddenItemId = document.createElement('input');
+    hiddenItemId.type = 'hidden';
+    hiddenItemId.name = 'item_id[]';
+
+    var searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'req-ac-input';
+    searchInput.placeholder = 'Ketik nama atau kode barang…';
+    searchInput.autocomplete = 'off';
+
+    var listBox = document.createElement('div');
+    listBox.className = 'req-ac-list';
+
+    acWrap.appendChild(searchInput);
+    acWrap.appendChild(hiddenItemId);
+    acWrap.appendChild(listBox);
+    searchCol.appendChild(acWrap);
+
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'req-row-remove';
+    removeBtn.innerHTML = '✕';
+    removeBtn.addEventListener('click', function () {
+      if (rowsWrap.children.length > 1) {
+        row.remove();
+        updateCount();
+        persistState();
+      }
+    });
+
+    top.appendChild(numBadge);
+    top.appendChild(searchCol);
+    top.appendChild(removeBtn);
+
+    var bottom = document.createElement('div');
+    bottom.className = 'req-row-bottom';
+
+    var stokCol = document.createElement('div');
+    stokCol.className = 'req-row-stok-col';
+    var stokLabel = document.createElement('div');
+    stokLabel.className = 'req-row-field-label';
+    stokLabel.textContent = 'Ketersediaan';
+    var stokInfo = document.createElement('div');
+    stokInfo.className = 'req-row-stok';
+    stokInfo.innerHTML = '<span class="req-row-stok-dot"></span><span class="req-row-stok-text">Tersedia</span><span class="req-row-stok-num">—</span>';
+    stokCol.appendChild(stokLabel);
+    stokCol.appendChild(stokInfo);
+
+    var unitCol = document.createElement('div');
+    unitCol.className = 'req-unit-col';
+    var unitLabel = document.createElement('div');
+    unitLabel.className = 'req-row-field-label';
+    unitLabel.textContent = 'Satuan';
+    var unitSelect = document.createElement('select');
+    unitSelect.name = 'satuan_id[]';
+    unitSelect.disabled = true;
+    var unitConvert = document.createElement('div');
+    unitConvert.className = 'req-unit-convert';
+    unitCol.appendChild(unitLabel);
+    unitCol.appendChild(unitSelect);
+    unitCol.appendChild(unitConvert);
+
+    var qtyCol = document.createElement('div');
+    qtyCol.className = 'req-qty-col';
+    var qtyLabel = document.createElement('div');
+    qtyLabel.className = 'req-row-field-label';
+    qtyLabel.textContent = 'Jumlah';
+    var qty = document.createElement('input');
+    qty.type = 'number';
+    qty.name = 'jumlah[]';
+    qty.min = '1';
+    qty.value = '1';
+    qty.disabled = true;
+    qtyCol.appendChild(qtyLabel);
+    qtyCol.appendChild(qty);
+
+    bottom.appendChild(stokCol);
+    bottom.appendChild(unitCol);
+    bottom.appendChild(qtyCol);
+
+    row.appendChild(top);
+    row.appendChild(bottom);
+    rowsWrap.appendChild(row);
+
+    var selectedItem = null;
+
+    function renderSuggestions(query) {
+      listBox.innerHTML = '';
+      var q = query.trim().toLowerCase();
+      var matches = itemsData.filter(function (it) {
+        return q === '' || it.nama.toLowerCase().indexOf(q) !== -1 || it.kode.toLowerCase().indexOf(q) !== -1;
+      }).slice(0, 30);
+
+      if (!matches.length) {
+        var empty = document.createElement('div');
+        empty.className = 'req-ac-empty';
+        empty.textContent = 'Barang tidak ditemukan.';
+        listBox.appendChild(empty);
+      } else {
+        matches.forEach(function (it) {
+          var opt = document.createElement('div');
+          opt.className = 'req-ac-item';
+          if (it.stok <= 0) opt.classList.add('is-empty');
+          var t = document.createElement('div');
+          t.className = 'req-ac-item-name';
+          t.textContent = it.nama;
+          var s = document.createElement('div');
+          s.className = 'req-ac-item-sub';
+          s.textContent = it.kode + ' · stok ' + it.stok + ' ' + it.satuan + (it.stok <= 0 ? ' (habis)' : '');
+          opt.appendChild(t);
+          opt.appendChild(s);
+          opt.addEventListener('mousedown', function (ev) {
+            ev.preventDefault();
+            selectItem(it);
+          });
+          listBox.appendChild(opt);
+        });
+      }
+      listBox.classList.add('show');
+    }
+
+    function selectItem(it) {
+      selectedItem = it;
+      hiddenItemId.value = it.id;
+      searchInput.value = it.nama + ' (' + it.kode + ')';
+      listBox.classList.remove('show');
+      unitSelect.disabled = false;
+      qty.disabled = false;
+      populateUnits();
+    }
+
+    searchInput.addEventListener('focus', function () {
+      renderSuggestions(searchInput.value.indexOf('(') !== -1 ? '' : searchInput.value);
+    });
+    searchInput.addEventListener('input', function () {
+      if (selectedItem && searchInput.value !== (selectedItem.nama + ' (' + selectedItem.kode + ')')) {
+        selectedItem = null;
+        hiddenItemId.value = '';
+        unitSelect.disabled = true;
+        qty.disabled = true;
+        unitSelect.innerHTML = '';
+        unitConvert.textContent = '';
+        stokInfo.classList.remove('low', 'empty');
+        stokInfo.querySelector('.req-row-stok-num').textContent = '—';
+        persistState();
+      }
+      renderSuggestions(searchInput.value);
+    });
+    document.addEventListener('click', function (ev) {
+      if (!acWrap.contains(ev.target)) listBox.classList.remove('show');
+    });
+
+    function populateUnits(presetSatuanId, presetJumlah) {
+      if (!selectedItem) return;
+      var baseSatuan = selectedItem.satuan;
+
+      unitSelect.innerHTML = '';
+      var baseOpt = document.createElement('option');
+      baseOpt.value = 'base';
+      baseOpt.textContent = baseSatuan + ' (satuan dasar)';
+      baseOpt.dataset.faktor = 1;
+      unitSelect.appendChild(baseOpt);
+
+      var alt = satuanByItem[selectedItem.id] || [];
+      alt.forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s.id;
+        o.textContent = s.nama_satuan + ' (1 ' + s.nama_satuan + ' = ' + s.isi + ' ' + baseSatuan + ')';
+        o.dataset.faktor = s.isi;
+        unitSelect.appendChild(o);
+      });
+
+      if (presetSatuanId) unitSelect.value = presetSatuanId;
+      if (presetJumlah) qty.value = presetJumlah;
+
+      updateStokAndConvert();
+    }
+
+    function updateStokAndConvert() {
+      if (!selectedItem) return;
+      var stok = selectedItem.stok;
+      var baseSatuan = selectedItem.satuan;
+
+      stokInfo.classList.remove('low', 'empty');
+      if (stok <= 0) stokInfo.classList.add('empty');
+      else if (stok <= 5) stokInfo.classList.add('low');
+      stokInfo.querySelector('.req-row-stok-num').textContent = stok + ' ' + baseSatuan;
+
+      var unitOpt = unitSelect.options[unitSelect.selectedIndex];
+      var faktor = unitOpt ? parseInt(unitOpt.dataset.faktor, 10) || 1 : 1;
+      var jml = parseInt(qty.value, 10) || 0;
+
+      unitConvert.textContent = faktor > 1 ? ('= ' + (jml * faktor) + ' ' + baseSatuan) : '';
+
+      var maxByUnit = faktor > 0 ? Math.floor(stok / faktor) : stok;
+      qty.max = maxByUnit > 0 ? maxByUnit : 1;
+      if (jml > maxByUnit && maxByUnit > 0) qty.value = maxByUnit;
+    }
+
+    unitSelect.addEventListener('change', function () { updateStokAndConvert(); persistState(); });
+    qty.addEventListener('input', function () { updateStokAndConvert(); persistState(); });
+
+    updateCount();
+
+    // Kalau baris ini dibuat dari data tersimpan (keranjang / draft), otomatis pilih barangnya.
+    if (preset && preset.item_id) {
+      var found = itemsData.find(function (it) { return String(it.id) === String(preset.item_id); });
+      if (found) {
+        selectedItem = found;
+        hiddenItemId.value = found.id;
+        searchInput.value = found.nama + ' (' + found.kode + ')';
         unitSelect.disabled = false;
         qty.disabled = false;
-        populateUnits();
+        populateUnits(preset.satuan_id, preset.jumlah);
       }
+    }
+  };
 
-      searchInput.addEventListener('focus', function () {
-        renderSuggestions(searchInput.value.indexOf('(') !== -1 ? '' : searchInput.value);
-      });
-      searchInput.addEventListener('input', function () {
-        if (selectedItem && searchInput.value !== (selectedItem.nama + ' (' + selectedItem.kode + ')')) {
-          selectedItem = null;
-          hiddenItemId.value = '';
-          unitSelect.disabled = true;
-          qty.disabled = true;
-          unitSelect.innerHTML = '';
-          unitConvert.textContent = '';
-          stokInfo.classList.remove('low', 'empty');
-          stokInfo.querySelector('.req-row-stok-num').textContent = '—';
-        }
-        renderSuggestions(searchInput.value);
-      });
-      document.addEventListener('click', function (ev) {
-        if (!acWrap.contains(ev.target)) listBox.classList.remove('show');
-      });
+  addBtn.addEventListener('click', function () {
+    addRow();
+    persistState();
+  });
 
-      function populateUnits() {
-        if (!selectedItem) return;
-        var baseSatuan = selectedItem.satuan;
+  // ---------- Muat ulang draft dari localStorage (kalau ada), atau fallback ke ?item_id= lama ----------
+  var cart = readCart();
 
-        unitSelect.innerHTML = '';
-        var baseOpt = document.createElement('option');
-        baseOpt.value = 'base';
-        baseOpt.textContent = baseSatuan + ' (satuan dasar)';
-        baseOpt.dataset.faktor = 1;
-        unitSelect.appendChild(baseOpt);
+  var urlParams = new URLSearchParams(window.location.search);
+  var urlItemId = urlParams.get('item_id');
+  if (urlItemId && !cart.find(function (c) { return String(c.item_id) === String(urlItemId); })) {
+    cart.push({ item_id: urlItemId, satuan_id: 'base', jumlah: 1 });
+  }
 
-        var alt = satuanByItem[selectedItem.id] || [];
-        alt.forEach(function (s) {
-          var o = document.createElement('option');
-          o.value = s.id;
-          o.textContent = s.nama_satuan + ' (1 ' + s.nama_satuan + ' = ' + s.isi + ' ' + baseSatuan + ')';
-          o.dataset.faktor = s.isi;
-          unitSelect.appendChild(o);
-        });
-
-        updateStokAndConvert();
-      }
-
-      function updateStokAndConvert() {
-        if (!selectedItem) return;
-        var stok = selectedItem.stok;
-        var baseSatuan = selectedItem.satuan;
-
-        stokInfo.classList.remove('low', 'empty');
-        if (stok <= 0) stokInfo.classList.add('empty');
-        else if (stok <= 5) stokInfo.classList.add('low');
-        stokInfo.querySelector('.req-row-stok-num').textContent = stok + ' ' + baseSatuan;
-
-        var unitOpt = unitSelect.options[unitSelect.selectedIndex];
-        var faktor = unitOpt ? parseInt(unitOpt.dataset.faktor, 10) || 1 : 1;
-        var jml = parseInt(qty.value, 10) || 0;
-
-        unitConvert.textContent = faktor > 1 ? ('= ' + (jml * faktor) + ' ' + baseSatuan) : '';
-
-        var maxByUnit = faktor > 0 ? Math.floor(stok / faktor) : stok;
-        qty.max = maxByUnit > 0 ? maxByUnit : 1;
-        if (jml > maxByUnit && maxByUnit > 0) qty.value = maxByUnit;
-      }
-
-      unitSelect.addEventListener('change', updateStokAndConvert);
-      qty.addEventListener('input', updateStokAndConvert);
-
-      updateCount();
-
-      // Kalau ini baris pertama dan datang dari Katalog Barang (?item_id=X), auto-pilih barang itu.
-      if (isFirstRow) {
-        var urlParams = new URLSearchParams(window.location.search);
-        var preId = urlParams.get('item_id');
-        if (preId) {
-          var preItem = itemsData.find(function (it) { return String(it.id) === String(preId); });
-          if (preItem) {
-            selectItem(preItem);
-          }
-        }
-      }
-    };
-
-    addBtn.addEventListener('click', addRow);
+  if (cart.length) {
+    cart.forEach(function (c) { addRow(c); });
+  } else {
     addRow();
   }
 
