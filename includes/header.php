@@ -11,6 +11,7 @@ foreach (MODULES as $key => $label) {
 }
 $pageLabels['kelola_admin.php'] = 'Kelola Admin';
 $pageLabels['kelola_bidang.php'] = 'Kelola Bidang';
+$pageLabels['katalog.php'] = 'Katalog Barang';
 $pageLabels['permintaan.php'] = 'Permintaan ATK';
 $pageLabels['progres.php'] = 'Progres ATK';
 $pageLabels['input_bast.php'] = 'Input BAST';
@@ -61,6 +62,7 @@ function nav_item($file, $label, $iconName) {
       <?php if (is_bidang()): ?>
         <div class="nav-group">
           <div class="nav-group-label">Menu Bidang</div>
+          <?php nav_item('katalog.php', 'Katalog Barang', 'box'); ?>
           <?php nav_item('permintaan.php', 'Permintaan ATK', 'clipboard'); ?>
           <?php nav_item('progres.php', 'Progres ATK', 'gauge'); ?>
           <?php nav_item('input_bast.php', 'Input BAST', 'file'); ?>

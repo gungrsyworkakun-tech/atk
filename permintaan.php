@@ -210,6 +210,8 @@ require __DIR__ . '/includes/header.php';
     };
 
     var addRow = function () {
+      var isFirstRow = rowsWrap.children.length === 0;
+
       var row = document.createElement('div');
       row.className = 'req-row';
 
@@ -426,6 +428,18 @@ require __DIR__ . '/includes/header.php';
       qty.addEventListener('input', updateStokAndConvert);
 
       updateCount();
+
+      // Kalau ini baris pertama dan datang dari Katalog Barang (?item_id=X), auto-pilih barang itu.
+      if (isFirstRow) {
+        var urlParams = new URLSearchParams(window.location.search);
+        var preId = urlParams.get('item_id');
+        if (preId) {
+          var preItem = itemsData.find(function (it) { return String(it.id) === String(preId); });
+          if (preItem) {
+            selectItem(preItem);
+          }
+        }
+      }
     };
 
     addBtn.addEventListener('click', addRow);

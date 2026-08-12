@@ -22,21 +22,26 @@ require __DIR__ . '/includes/header.php';
 ?>
 <div class="topline">
   <div><h1>Realisasi & Limit Stok</h1><div class="sub">Jumlah barang yang sudah terealisasi (keluar) dan batas stok minimum</div></div>
+  <?php if ($items): ?>
+    <a class="btn btn-ghost" href="export_realisasi.php"><?= icon('file', 15) ?> Export ke Excel</a>
+  <?php endif; ?>
 </div>
 <div class="card">
   <?php if (!$items): ?>
     <div class="empty"><b>Belum ada barang</b>Tambahkan barang untuk memantau realisasi.</div>
   <?php else: ?>
   <table>
-    <thead><tr><th>Barang</th><th>Masuk total</th><th>Terealisasi (keluar)</th><th>Sisa stok</th><th>Limit minimum</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>No</th><th>Kode</th><th>Barang</th><th>Masuk total</th><th>Terealisasi (keluar)</th><th>Sisa stok</th><th>Limit minimum</th><th>Status</th><th></th></tr></thead>
     <tbody>
-      <?php foreach ($items as $it):
+      <?php foreach ($items as $i => $it):
         $stok = (int)$it['stok']; $min = (int)$it['stok_minimum'];
         if ($min > 0 && $stok <= $min) { $tag = '<span class="tag tag-danger">Stok menipis</span>'; }
         elseif ($min > 0 && $stok <= $min * 1.5) { $tag = '<span class="tag tag-warn">Perlu dipantau</span>'; }
         else { $tag = '<span class="tag tag-ok">Aman</span>'; }
       ?>
       <tr>
+        <td class="mono"><?= $i + 1 ?></td>
+        <td class="mono"><?= e($it['kode']) ?></td>
         <td><?= e($it['nama']) ?></td>
         <td class="mono"><?= (int)$it['total_masuk'] ?></td>
         <td class="mono"><?= (int)$it['total_keluar'] ?></td>
