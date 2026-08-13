@@ -9,6 +9,7 @@ const MODULES = [
     'harga'               => 'Harga Barang',
     'bidang'              => 'Bidang Pengambilan',
     'kelola_permintaan'   => 'Permintaan ATK Bidang',
+    'asisten_ai'          => 'Asisten AI',
 ];
 
 // Ikon + warna badge untuk tiap menu (dipakai di sidebar & kartu shortcut dashboard).
@@ -21,6 +22,7 @@ const MODULE_META = [
     'harga'                => ['icon' => 'tag',       'color' => 'green',  'sub' => 'Harga satuan dan nilai stok'],
     'bidang'               => ['icon' => 'building',  'color' => 'pink',   'sub' => 'Rekap pengambilan per bidang'],
     'kelola_permintaan'    => ['icon' => 'clipboard',  'color' => 'indigo', 'sub' => 'Proses & update status permintaan ATK dari bidang'],
+    'asisten_ai'           => ['icon' => 'chat',       'color' => 'purple', 'sub' => 'Tanya AI seputar stok & laporan'],
 ];
 const ADMIN_META = [
     'kelola_admin'  => ['icon' => 'shield',    'color' => 'indigo', 'label' => 'Kelola Admin',  'sub' => 'Akun & hak akses admin biasa'],
@@ -109,6 +111,7 @@ function icon($name, $size = 18) {
         'sun'           => '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>',
         'clock'         => '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path>',
         'clipboard'     => '<rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"></path><path d="M9 12h6M9 16h6"></path>',
+        'chat'          => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M8 10h.01M12 10h.01M16 10h.01"></path>',
     ];
     $p = $paths[$name] ?? $paths['grid'];
     return '<svg width="' . (int)$size . '" height="' . (int)$size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';

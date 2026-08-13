@@ -75,7 +75,7 @@ function nav_item($file, $label, $iconName) {
           <?php nav_item('analitik.php', 'Dashboard Analitik', 'gauge'); ?>
         </div>
 
-        <?php if (has_permission('barang_masuk_keluar') || has_permission('barcode') || has_permission('data_barang') || has_permission('bast') || has_permission('realisasi') || has_permission('harga') || has_permission('bidang') || has_permission('kelola_permintaan')): ?>
+        <?php if (has_permission('barang_masuk_keluar') || has_permission('barcode') || has_permission('data_barang') || has_permission('bast') || has_permission('realisasi') || has_permission('harga') || has_permission('bidang') || has_permission('kelola_permintaan') || has_permission('asisten_ai')): ?>
         <div class="nav-group">
           <div class="nav-group-label">Data ATK</div>
           <?php if (has_permission('barang_masuk_keluar')): nav_item('transaksi.php', MODULES['barang_masuk_keluar'], MODULE_META['barang_masuk_keluar']['icon']); endif; ?>
@@ -86,6 +86,7 @@ function nav_item($file, $label, $iconName) {
           <?php if (has_permission('harga')): nav_item('harga.php', MODULES['harga'], MODULE_META['harga']['icon']); endif; ?>
           <?php if (has_permission('bidang')): nav_item('bidang.php', MODULES['bidang'], MODULE_META['bidang']['icon']); endif; ?>
           <?php if (has_permission('kelola_permintaan')): nav_item('kelola_permintaan.php', MODULES['kelola_permintaan'], MODULE_META['kelola_permintaan']['icon']); endif; ?>
+          <?php if (has_permission('asisten_ai')): nav_item('asisten_ai.php', MODULES['asisten_ai'], MODULE_META['asisten_ai']['icon']); endif; ?>
         </div>
         <?php endif; ?>
 
