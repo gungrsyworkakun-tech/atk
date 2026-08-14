@@ -15,6 +15,12 @@ function simpan_foto_barang($fotoDir, $allowedFotoTypes, $kodeBarang) {
     if (empty($_FILES['foto']) || $_FILES['foto']['error'] === UPLOAD_ERR_NO_FILE) {
         return [null, null]; // tidak ada file diunggah
     }
+    
+    // Cek jika ukuran melebihi upload_max_filesize di php.ini
+    if ($_FILES['foto']['error'] === UPLOAD_ERR_INI_SIZE || $_FILES['foto']['error'] === UPLOAD_ERR_FORM_SIZE) {
+        return [null, 'Gagal: Ukuran foto terlalu besar. Maksimal 2 MB.'];
+    }
+    
     if ($_FILES['foto']['error'] !== UPLOAD_ERR_OK) {
         return [null, 'Gagal mengunggah foto. Coba lagi.'];
     }
@@ -24,6 +30,7 @@ function simpan_foto_barang($fotoDir, $allowedFotoTypes, $kodeBarang) {
     if ($_FILES['foto']['size'] > 2 * 1024 * 1024) {
         return [null, 'Ukuran foto maksimal 2 MB.'];
     }
+    
     $ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
     $ext = preg_replace('/[^a-z0-9]/', '', $ext) ?: 'jpg';
     $safeName = 'barang-' . preg_replace('/[^a-zA-Z0-9\-]/', '', $kodeBarang) . '-' . time() . '.' . $ext;
@@ -31,6 +38,12 @@ function simpan_foto_barang($fotoDir, $allowedFotoTypes, $kodeBarang) {
         return [null, 'Gagal menyimpan foto di server.'];
     }
     return [$safeName, null];
+}
+
+// Cek jika POST terhapus oleh server karena file kelewat besar (post_max_size terlampaui)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && $_SERVER['CONTENT_LENGTH'] > 0) {
+    flash_set('Gagal: Ukuran total file sangat besar sehingga ditolak server. Gunakan foto di bawah 2 MB.', 'error');
+    redirect('data_barang.php');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'save') {
@@ -48,7 +61,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'save') {
     if ($nama === '' || $kode === '') {
         flash_set('Kode dan nama barang wajib diisi.', 'error');
     } else {
-        // Ambil foto lama (kalau sedang mengubah barang) untuk keperluan hapus/ganti.
         $fotoLama = null;
         if ($id) {
             $cek = $pdo->prepare('SELECT foto FROM items WHERE id = ?');
@@ -67,17 +79,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'save') {
         try {
             if ($id) {
                 if ($fotoBaru) {
-                    // Foto baru diunggah: pakai foto baru, hapus file foto lama dari disk.
                     $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=?, foto=? WHERE id=?');
                     $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $fotoBaru, $id]);
                     if ($fotoLama && is_file($fotoDir . $fotoLama)) @unlink($fotoDir . $fotoLama);
                 } elseif ($hapusFotoCentang) {
-                    // Centang "hapus foto" tanpa unggah baru: kosongkan foto.
                     $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=?, foto=NULL WHERE id=?');
                     $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $id]);
                     if ($fotoLama && is_file($fotoDir . $fotoLama)) @unlink($fotoDir . $fotoLama);
                 } else {
-                    // Tidak ada perubahan foto.
                     $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=? WHERE id=?');
                     $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $id]);
                 }
@@ -93,11 +102,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'save') {
             redirect('data_barang.php');
         }
     }
-    // Setelah simpan, arahkan langsung ke mode "Ubah" barang ini supaya bisa lanjut atur detail satuan turunan.
+    // Redirect ke edit agar user bisa langsung tambah Satuan Turunan jika diperlukan
     redirect('data_barang.php?action=edit&id=' . $id);
 }
 
-// Tambah satuan turunan (mis. "1 Box = 10 Rim") untuk barang yang sudah ada.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'add_satuan') {
     csrf_check();
     $itemId = (int)$_POST['item_id'];
@@ -107,7 +115,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'add_satua
     if ($namaSatuan === '') {
         flash_set('Nama satuan wajib diisi.', 'error');
     } else {
-        // Cegah duplikat nama satuan pada barang yang sama.
         $check = $pdo->prepare('SELECT id FROM item_satuan WHERE item_id = ? AND nama_satuan = ?');
         $check->execute([$itemId, $namaSatuan]);
         if ($check->fetch()) {
@@ -164,62 +171,19 @@ foreach ($countRows as $cr) $satuanCounts[$cr['item_id']] = (int)$cr['c'];
 require __DIR__ . '/includes/header.php';
 ?>
 <div class="topline">
-  <div><h1>Data Barang</h1><div class="sub">Jenis barang, satuan, dan jumlah stok</div></div>
+  <div><h1>Data Barang</h1><div class="sub">Manajemen inventaris, harga, dan satuan barang</div></div>
 </div>
 
-<div class="card">
-  <h3><?= $editing ? 'Ubah barang' : 'Tambah barang' ?></h3>
-  <form method="post" enctype="multipart/form-data">
-    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-    <input type="hidden" name="do" value="save">
-    <?php if ($editing): ?><input type="hidden" name="id" value="<?= e($editing['id']) ?>"><?php endif; ?>
-    <div class="form-row">
-      <div class="field"><label>Kode barang</label><input class="mono" name="kode" value="<?= e($editing['kode'] ?? $nextKode) ?>" required></div>
-      <div class="field"><label>Nama barang</label><input name="nama" value="<?= e($editing['nama'] ?? '') ?>" required placeholder="mis. Kertas HVS A4"></div>
-      <div class="field"><label>Jenis</label><input name="jenis" value="<?= e($editing['jenis'] ?? '') ?>" placeholder="mis. Alat tulis"></div>
-      <div class="field">
-        <label>Satuan dasar</label>
-        <input name="satuan" value="<?= e($editing['satuan'] ?? 'rim') ?>" placeholder="mis. rim, pcs, lusin, botol" required>
-      </div>
-    </div>
-    <div class="unit-hint-box">
-     
-    </div>
-    <div class="form-row">
-      <div class="field"><label>Stok (dalam satuan dasar)</label><input type="number" min="0" name="stok" value="<?= e($editing['stok'] ?? 0) ?>"></div>
-      <div class="field"><label>Stok minimum</label><input type="number" min="0" name="stok_minimum" value="<?= e($editing['stok_minimum'] ?? 0) ?>"></div>
-      <div class="field"><label>Harga satuan (Rp)</label><input type="number" min="0" step="1" name="harga" value="<?= e($editing['harga'] ?? 0) ?>"></div>
-      <div class="field"><label>Tahun masuk</label><input type="number" name="tahun_masuk" value="<?= e($editing['tahun_masuk'] ?? date('Y')) ?>"></div>
-    </div>
-    <div class="form-row">
-      <div class="field" style="flex:1;">
-        <label>Foto barang</label>
-        <input type="file" name="foto" accept="image/jpeg,image/png,image/webp">
-        <div class="helptext" style="margin:4px 0 0;">Format JPG/PNG/WebP, maksimal 2 MB.</div>
-      </div>
-      <?php if (!empty($editing['foto'])): ?>
-      <div class="field" style="flex:0 0 auto;">
-        <label>Foto saat ini</label>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <img src="serve_foto_barang.php?id=<?= (int)$editing['id'] ?>&v=<?= time() ?>" alt="Foto <?= e($editing['nama']) ?>" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);">
-          <label style="display:flex;align-items:center;gap:6px;font-weight:400;font-size:13px;">
-            <input type="checkbox" name="hapus_foto" value="1"> Hapus foto
-          </label>
-        </div>
-      </div>
-      <?php endif; ?>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-primary" type="submit">Simpan</button>
-      <?php if ($editing): ?><a class="btn btn-ghost" href="data_barang.php">Batal</a><?php endif; ?>
-    </div>
-  </form>
-</div>
-
-<?php if ($editing): ?>
-<div class="card">
-  <h3>Kelola satuan turunan — <?= e($editing['nama']) ?></h3>
-  <p class="helptext" style="margin-top:0;">Tambahkan satuan kemasan lain untuk barang ini (mis. Box, Kardus, Dus). Admin gudang & Admin Bidang nanti bisa memilih satuan mana saja yang tersedia di sini saat mencatat transaksi atau mengajukan permintaan.</p>
+<?php 
+// Hanya tampilkan form kelola satuan jika sedang dalam mode 'edit' setelah menyimpan
+if ($editing): 
+?>
+<div class="card" style="border:1px solid var(--accent); box-shadow:0 0 0 4px rgba(59,130,246,.1);">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <h3 style="margin:0;">Kelola Satuan Turunan — <?= e($editing['nama']) ?></h3>
+    <a href="data_barang.php" class="btn btn-ghost" style="padding:6px 12px; font-size:12px;">Selesai / Tutup</a>
+  </div>
+  <p class="helptext" style="margin-top:0;">Tambahkan satuan kemasan lain (mis. Box, Kardus). Admin bisa memilih satuan ini saat mencatat transaksi.</p>
 
   <?php if ($editingSatuanList): ?>
   <table class="unit-table" style="margin-bottom:16px;">
@@ -237,10 +201,10 @@ require __DIR__ . '/includes/header.php';
     </tbody>
   </table>
   <?php else: ?>
-    <div class="empty" style="margin-bottom:16px;"><b>Belum ada satuan turunan</b>Barang ini hanya bisa dicatat dalam satuan dasar (<?= e($editing['satuan']) ?>). Tambahkan satuan lain lewat form di bawah, misalnya kalau barang datang per box/kardus.</div>
+    <div class="empty" style="margin-bottom:16px;"><b>Belum ada satuan turunan</b>Barang ini hanya bisa dicatat dalam satuan dasar (<?= e($editing['satuan']) ?>).</div>
   <?php endif; ?>
 
-  <form method="post" class="form-row" style="align-items:end;">
+  <form method="post" class="form-row" style="align-items:end; padding-top:12px; border-top:1px dashed var(--line);">
     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
     <input type="hidden" name="do" value="add_satuan">
     <input type="hidden" name="item_id" value="<?= e($editing['id']) ?>">
@@ -251,50 +215,380 @@ require __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<div class="card" style="margin-bottom:16px;">
-  <form method="get" style="display:flex;gap:8px;">
-    <input type="text" name="q" value="<?= e($q) ?>" placeholder="Cari kode, nama, atau jenis barang..." style="flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:6px;background:transparent;color:inherit;">
-    <button class="btn btn-primary" type="submit">Cari</button>
-    <?php if ($q !== ''): ?><a class="btn btn-ghost" href="data_barang.php">Reset</a><?php endif; ?>
-  </form>
+<style>
+  .db-summary-card{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;
+    background:linear-gradient(135deg,var(--c-blue-bg),var(--c-teal-bg));border:1px solid var(--line);
+    border-radius:var(--radius-lg);padding:16px 20px;margin:18px 0;}
+  .db-summary-item{display:flex;flex-direction:column;}
+  .db-summary-label{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;}
+  .db-summary-value{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;margin-top:3px;}
+  .db-summary-value.danger{color:#f87171;}
+
+  .db-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;}
+  .db-search{flex:1;min-width:220px;position:relative;}
+  .db-search input{width:100%;padding:10px 14px 10px 38px;border:1.5px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--paper-sunk);color:var(--text);font-size:13.5px;font-family:'Inter',Arial,sans-serif;box-sizing:border-box;}
+  .db-search input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.16);}
+  .db-search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.55;pointer-events:none;}
+  .db-count{font-size:12px;color:var(--text-dim);white-space:nowrap;}
+
+  .db-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;}
+  .db-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;box-shadow:var(--shadow-card);cursor:pointer;display:flex;flex-direction:column;
+    transition:transform .15s var(--ease), box-shadow .15s var(--ease), border-color .15s var(--ease);}
+  .db-card:hover{transform:translateY(-3px);box-shadow:0 24px 48px -20px rgba(0,0,0,.45);border-color:var(--accent);}
+  .db-card.editing{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.18);}
+
+  /* Kartu Tambah Barang (+) */
+  .db-card-add{border:2px dashed var(--line);background:transparent;justify-content:center;align-items:center;min-height:240px;text-align:center;padding:20px;}
+  .db-card-add:hover{border-color:var(--accent);background:rgba(59,130,246,.04);}
+  .db-card-add-icon{width:54px;height:54px;border-radius:50%;background:var(--paper-sunk);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--accent);margin-bottom:12px;
+    transition:transform .2s ease;}
+  .db-card-add:hover .db-card-add-icon{transform:scale(1.1);background:var(--accent);color:#fff;}
+
+  .db-photo{width:100%;aspect-ratio:1/1;background:var(--paper-sunk);display:flex;align-items:center;
+    justify-content:center;overflow:hidden;position:relative;}
+  .db-photo img{width:100%;height:100%;object-fit:cover;}
+  .db-photo-placeholder{color:var(--text-faint);}
+  .db-badge-stok{position:absolute;top:8px;left:8px;font-size:10px;font-weight:700;padding:3px 8px;
+    border-radius:20px;backdrop-filter:blur(4px);}
+  .db-badge-stok.ok{background:rgba(15,23,42,.7);color:#fff;}
+  .db-badge-stok.low{background:rgba(239,68,68,.85);color:#fff;}
+
+  .db-body{padding:12px 13px 14px;display:flex;flex-direction:column;gap:5px;flex:1;}
+  .db-name{font-size:12.5px;font-weight:600;line-height:1.35;min-height:34px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .db-code{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-faint);}
+  .db-meta-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;}
+  .db-satuan-extra{font-size:10px;color:var(--text-dim);}
+
+  /* ---------- Modal Form Ala Shopee ---------- */
+  .db-modal-overlay{position:fixed;inset:0;background:rgba(6,9,16,.75);z-index:200;
+    display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px);}
+  .db-modal-overlay.show{display:flex;}
+  .db-modal{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius-lg);
+    width:min(850px,100%);max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-pop);position:relative;}
+  .db-modal-close{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:50%;
+    background:var(--paper-sunk);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+    cursor:pointer;color:var(--text-dim);z-index:10;transition:background .15s ease;}
+  .db-modal-close:hover{background:var(--accent);color:#fff;}
+  
+  .db-modal-inner{display:grid;grid-template-columns:300px 1fr;gap:0;}
+  @media (max-width:720px){ .db-modal-inner{grid-template-columns:1fr;} }
+
+  .db-modal-photo{background:var(--paper-sunk);display:flex;align-items:center;justify-content:center;
+    aspect-ratio:1/1;overflow:hidden;position:relative;border-right:1px solid var(--line-soft);}
+  .db-modal-photo img{width:100%;height:100%;object-fit:cover;}
+
+  .db-modal-info{padding:26px 28px;}
+  
+  /* Input Custom */
+  .db-shopee-title-input { width: 100%; font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; border: none; background: transparent; color: var(--text); padding: 0; outline: none; margin-bottom: 15px; }
+  .db-shopee-title-input:focus { border-bottom: 2px dashed var(--accent); }
+  .db-shopee-title-input::placeholder { color: var(--text-dim); }
+
+  .db-shopee-label { display: block; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; margin-bottom: 6px; }
+  .db-shopee-input { width: 100%; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-sunk); color: var(--text); font-size: 13.5px; box-sizing: border-box; }
+  .db-shopee-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,.16); }
+
+  .db-modal-price-box { background: var(--c-blue-bg); border: 1px solid rgba(59,130,246,.25); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 18px; }
+  .db-modal-price-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 700; }
+  .db-shopee-price-input { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 700; color: var(--accent); background: transparent; border: none; outline: none; width: 100%; margin-top: 2px; }
+</style>
+
+<div class="db-summary-card">
+  <div class="db-summary-item">
+    <div class="db-summary-label">Total Jenis Barang</div>
+    <div class="db-summary-value"><?= count($items) ?></div>
+  </div>
+  <div class="db-summary-item">
+    <div class="db-summary-label">Stok Menipis</div>
+    <?php $jumlahMenipis = count(array_filter($items, fn($it) => (int)$it['stok'] <= (int)$it['stok_minimum'] && (int)$it['stok_minimum'] > 0)); ?>
+    <div class="db-summary-value <?= $jumlahMenipis > 0 ? 'danger' : '' ?>"><?= $jumlahMenipis ?></div>
+  </div>
 </div>
 
-<div class="card">
-  <?php if (!$items): ?>
-    <div class="empty"><b><?= $q !== '' ? 'Barang tidak ditemukan' : 'Belum ada barang' ?></b><?= $q !== '' ? 'Tidak ada barang yang cocok dengan pencarian "' . e($q) . '".' : 'Tambahkan jenis ATK yang ingin dikelola lewat formulir di atas.' ?></div>
-  <?php else: ?>
-  <table>
-    <thead><tr><th>Foto</th><th>Kode</th><th>Nama</th><th>Jenis</th><th>Satuan</th><th>Stok</th><th>Stok minimum</th><th>Tahun masuk</th><th></th></tr></thead>
-    <tbody>
-      <?php foreach ($items as $it): ?>
-      <tr>
-        <td>
+<div class="db-toolbar">
+  <form method="get" class="db-search" style="margin:0;">
+    <?= icon('search', 15) ?>
+    <input type="text" name="q" value="<?= e($q) ?>" placeholder="Cari kode, nama, atau jenis barang...">
+  </form>
+  <span class="db-count"><?= count($items) ?> barang<?= $q !== '' ? ' ditemukan' : '' ?></span>
+  <?php if ($q !== ''): ?><a class="btn btn-ghost" href="data_barang.php" style="font-size:12.5px;padding:7px 12px;">Reset</a><?php endif; ?>
+</div>
+
+<div class="db-grid">
+  <!-- KARTU 1: Tombol Tambah Barang (+) -->
+  <div class="db-card db-card-add" id="btnTambahBarang">
+    <div class="db-card-add-icon">+</div>
+    <div style="font-size:14px;font-weight:700;color:var(--text);">Tambah Barang</div>
+    <div style="font-size:11.5px;color:var(--text-dim);margin-top:4px;">Klik untuk memasukkan data barang baru</div>
+  </div>
+
+  <?php if ($items): ?>
+    <?php foreach ($items as $it):
+      $stokMenipis = (int)$it['stok'] <= (int)$it['stok_minimum'] && (int)$it['stok_minimum'] > 0;
+      $satuanList = [];
+      if (!empty($satuanCounts[$it['id']])) {
+          $stmtS = $pdo->prepare('SELECT nama_satuan, isi FROM item_satuan WHERE item_id = ? ORDER BY isi');
+          $stmtS->execute([$it['id']]);
+          $satuanList = $stmtS->fetchAll();
+      }
+      $itemJson = json_encode([
+          'id' => $it['id'], 'kode' => $it['kode'], 'nama' => $it['nama'], 'jenis' => $it['jenis'],
+          'satuan' => $it['satuan'], 'stok' => (int)$it['stok'], 'stokMinimum' => (int)$it['stok_minimum'],
+          'harga' => (float)($it['harga'] ?? 0), 'tahunMasuk' => (int)$it['tahun_masuk'], 'hasFoto' => !empty($it['foto']),
+          'satuanList' => array_map(fn($s) => ['nama' => $s['nama_satuan'], 'isi' => (int)$s['isi']], $satuanList),
+      ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
+      $isEditing = $editing && (int)$editing['id'] === (int)$it['id'];
+    ?>
+      <div class="db-card js-open-detail <?= $isEditing ? 'editing' : '' ?>" data-item='<?= $itemJson ?>'>
+        <div class="db-photo">
           <?php if (!empty($it['foto'])): ?>
-            <img src="serve_foto_barang.php?id=<?= (int)$it['id'] ?>" alt="Foto <?= e($it['nama']) ?>" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);">
+            <img src="serve_foto_barang.php?id=<?= (int)$it['id'] ?>" alt="Foto <?= e($it['nama']) ?>">
           <?php else: ?>
-            <span style="display:inline-flex;width:44px;height:44px;align-items:center;justify-content:center;border-radius:6px;border:1px dashed var(--line);color:var(--text-dim);font-size:10px;text-align:center;">Tanpa foto</span>
+            <div class="db-photo-placeholder"><?= icon('box', 30) ?></div>
           <?php endif; ?>
-        </td>
-        <td class="mono"><?= e($it['kode']) ?></td>
-        <td><?= e($it['nama']) ?></td>
-        <td><?= e($it['jenis']) ?></td>
-        <td>
-          <span class="unit-badge"><?= e($it['satuan']) ?></span>
-          <?php if (!empty($satuanCounts[$it['id']])): ?>
-            <span class="unit-extra-count">+<?= (int)$satuanCounts[$it['id']] ?> satuan lain</span>
-          <?php endif; ?>
-        </td>
-        <td class="mono"><?= (int)$it['stok'] ?></td>
-        <td class="mono"><?= (int)$it['stok_minimum'] ?></td>
-        <td class="mono"><?= (int)$it['tahun_masuk'] ?></td>
-        <td class="actions-cell">
-          <a class="icon-btn" href="?action=edit&id=<?= e($it['id']) ?>">Ubah</a>
-          <a class="icon-btn danger" href="?action=delete&id=<?= e($it['id']) ?>" onclick="return confirm('Hapus barang ini? Riwayat transaksi terkait ikut terhapus.');">Hapus</a>
-        </td>
-      </tr>
-      <?php endforeach; ?>
-    </tbody>
-  </table>
+          <span class="db-badge-stok <?= $stokMenipis ? 'low' : 'ok' ?>"><?= $stokMenipis ? 'Menipis' : 'Stok ' . (int)$it['stok'] ?></span>
+        </div>
+        <div class="db-body">
+          <div class="db-name"><?= e($it['nama']) ?></div>
+          <div class="db-code"><?= e($it['kode']) ?></div>
+          <div class="db-meta-row">
+            <span class="unit-badge"><?= e($it['satuan']) ?></span>
+            <?php if (!empty($satuanCounts[$it['id']])): ?>
+              <span class="db-satuan-extra">+<?= (int)$satuanCounts[$it['id']] ?> satuan lain</span>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+    <?php endforeach; ?>
   <?php endif; ?>
 </div>
+
+<?php if (!$items && $q !== ''): ?>
+  <div class="empty"><b>Barang tidak ditemukan</b>Tidak ada barang yang cocok dengan pencarian "<?= e($q) ?>".</div>
+<?php endif; ?>
+
+<!-- ========================================== -->
+<!-- MODAL ALA SHOPEE (INPUT / EDIT BARANG)    -->
+<!-- ========================================== -->
+<div class="db-modal-overlay" id="dbModalOverlay">
+  <div class="db-modal">
+    <div class="db-modal-close" id="dbModalClose">✕</div>
+    <div class="db-modal-inner">
+      
+      <!-- KIRI: Preview Foto -->
+      <div class="db-modal-photo">
+        <img id="dbModalPhotoPreview" src="" alt="Preview Foto" style="display:none;">
+        <div id="dbModalPhotoPlaceholder" class="db-photo-placeholder" style="display:flex;align-items:center;justify-content:center;">
+          <?= icon('box', 48) ?>
+        </div>
+      </div>
+
+      <!-- KANAN: Form Detail -->
+      <div class="db-modal-info">
+        <form method="post" id="dbModalForm" enctype="multipart/form-data">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <input type="hidden" name="do" value="save">
+          <input type="hidden" name="id" id="dbModalIdInput">
+
+          <!-- Nama Barang -->
+          <input type="text" name="nama" id="dbModalNama" class="db-shopee-title-input" placeholder="Masukkan Nama Barang..." required>
+
+          <!-- Harga -->
+          <div class="db-modal-price-box">
+             <div class="db-modal-price-label">Harga Satuan (Rp)</div>
+             <input type="number" min="0" step="1" name="harga" id="dbModalHarga" class="db-shopee-price-input" placeholder="0" required>
+          </div>
+
+          <!-- Grid Input Lainnya -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div>
+              <label class="db-shopee-label">Kode Barang</label>
+              <input type="text" name="kode" id="dbModalKode" class="db-shopee-input" placeholder="mis. ATK-0003" required>
+            </div>
+            <div>
+              <label class="db-shopee-label">Jenis / Kategori</label>
+              <input type="text" name="jenis" id="dbModalJenis" class="db-shopee-input" placeholder="mis. Alat Tulis">
+            </div>
+            <div>
+              <label class="db-shopee-label">Satuan Dasar</label>
+              <input type="text" name="satuan" id="dbModalSatuan" class="db-shopee-input" placeholder="rim, pcs, pack" required>
+            </div>
+            <div>
+              <label class="db-shopee-label">Tahun Masuk</label>
+              <input type="number" name="tahun_masuk" id="dbModalTahun" class="db-shopee-input" placeholder="<?= date('Y') ?>">
+            </div>
+            <div>
+              <label class="db-shopee-label">Jumlah Stok</label>
+              <input type="number" min="0" name="stok" id="dbModalStok" class="db-shopee-input" placeholder="0" required>
+            </div>
+            <div>
+              <label class="db-shopee-label">Stok Minimum</label>
+              <input type="number" min="0" name="stok_minimum" id="dbModalStokMin" class="db-shopee-input" placeholder="0" required>
+            </div>
+            <div style="grid-column: 1 / -1;">
+              <label class="db-shopee-label">Upload Foto Barang</label>
+              <input type="file" name="foto" id="dbModalFoto" accept="image/jpeg,image/png,image/webp" class="db-shopee-input" style="padding:6px 10px;">
+            </div>
+          </div>
+
+          <!-- Hapus Foto & Kelola Satuan Text -->
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+            <div id="dbModalHapusFotoWrap" style="display:none;">
+              <label style="font-size:12px; font-weight:600; cursor:pointer; color:var(--text-dim); display:flex; align-items:center; gap:6px;">
+                <input type="checkbox" name="hapus_foto" value="1"> Hapus foto lama
+              </label>
+            </div>
+            <div id="dbModalUnitInfo" style="font-size:11px; color:var(--text-dim); font-weight:600;"></div>
+          </div>
+
+          <!-- Tombol Aksi -->
+          <div style="display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line-soft);padding-top:16px;">
+            <a href="#" class="btn btn-ghost" id="dbModalHapusBtn" style="display:none; color:#f87171;" onclick="return confirm('Yakin ingin menghapus barang ini?');">Hapus Barang</a>
+            <button type="button" class="btn btn-ghost" id="dbModalCancelBtn">Batal</button>
+            <button type="submit" class="btn btn-primary" style="padding:10px 22px;font-size:13.5px;">Simpan Data</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var overlay = document.getElementById('dbModalOverlay');
+  var closeBtn = document.getElementById('dbModalClose');
+  var cancelBtn = document.getElementById('dbModalCancelBtn');
+  var form = document.getElementById('dbModalForm');
+  var btnTambah = document.getElementById('btnTambahBarang');
+  
+  var photoPreview = document.getElementById('dbModalPhotoPreview');
+  var photoPlaceholder = document.getElementById('dbModalPhotoPlaceholder');
+  var hapusFotoWrap = document.getElementById('dbModalHapusFotoWrap');
+  var hapusBtn = document.getElementById('dbModalHapusBtn');
+  var unitInfo = document.getElementById('dbModalUnitInfo');
+  
+  var inputId = document.getElementById('dbModalIdInput');
+  var inputNama = document.getElementById('dbModalNama');
+  var inputHarga = document.getElementById('dbModalHarga');
+  var inputKode = document.getElementById('dbModalKode');
+  var inputJenis = document.getElementById('dbModalJenis');
+  var inputSatuan = document.getElementById('dbModalSatuan');
+  var inputStok = document.getElementById('dbModalStok');
+  var inputStokMin = document.getElementById('dbModalStokMin');
+  var inputTahun = document.getElementById('dbModalTahun');
+  var inputFoto = document.getElementById('dbModalFoto');
+
+  var nextKodeGenerator = '<?= e($nextKode) ?>';
+
+  // Live preview foto & VALIDASI FRONTEND UNTUK UKURAN MAKS 2MB
+  inputFoto.addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (file) {
+      // Cek ukuran file (Maksimal 2 MB = 2 * 1024 * 1024 bytes)
+      if (file.size > 2 * 1024 * 1024) {
+        alert('Gagal: Ukuran foto terlalu besar! Maksimal 2 MB.');
+        
+        // Reset input file dan preview gambar
+        inputFoto.value = ''; 
+        photoPreview.style.display = 'none';
+        photoPreview.src = '';
+        photoPlaceholder.style.display = 'flex';
+        return;
+      }
+
+      // Jika lolos, tampilkan preview foto
+      var reader = new FileReader();
+      reader.onload = function (evt) {
+        photoPreview.src = evt.target.result;
+        photoPreview.style.display = 'block';
+        photoPlaceholder.style.display = 'none';
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  function openAddModal() {
+    form.reset();
+    inputId.value = '';
+    
+    photoPreview.style.display = 'none';
+    photoPreview.src = '';
+    photoPlaceholder.style.display = 'flex';
+    hapusFotoWrap.style.display = 'none';
+    hapusBtn.style.display = 'none';
+    unitInfo.textContent = '';
+    
+    inputKode.value = nextKodeGenerator;
+    inputTahun.value = new Date().getFullYear();
+    inputSatuan.value = 'pcs';
+
+    overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function openEditModal(item) {
+    form.reset();
+    inputId.value = item.id;
+    
+    inputNama.value = item.nama || '';
+    inputHarga.value = item.harga || 0;
+    inputKode.value = item.kode || '';
+    inputJenis.value = item.jenis || '';
+    inputSatuan.value = item.satuan || 'pcs';
+    inputStok.value = item.stok || 0;
+    inputStokMin.value = item.stokMinimum || 0;
+    inputTahun.value = item.tahunMasuk || new Date().getFullYear();
+
+    if (item.hasFoto) {
+      photoPreview.src = 'serve_foto_barang.php?id=' + item.id;
+      photoPreview.style.display = 'block';
+      photoPlaceholder.style.display = 'none';
+      hapusFotoWrap.style.display = 'block';
+    } else {
+      photoPreview.style.display = 'none';
+      photoPreview.src = '';
+      photoPlaceholder.style.display = 'flex';
+      hapusFotoWrap.style.display = 'none';
+    }
+
+    if (item.satuanList && item.satuanList.length > 0) {
+       unitInfo.textContent = 'Memiliki ' + item.satuanList.length + ' satuan turunan.';
+    } else {
+       unitInfo.textContent = 'Belum ada satuan turunan.';
+    }
+
+    hapusBtn.href = 'data_barang.php?action=delete&id=' + item.id;
+    hapusBtn.style.display = 'inline-block';
+
+    overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    overlay.classList.remove('show');
+    document.body.style.overflow = '';
+  }
+
+  if (btnTambah) btnTambah.addEventListener('click', openAddModal);
+
+  document.querySelectorAll('.js-open-detail').forEach(function (card) {
+    card.addEventListener('click', function () {
+      try {
+        openEditModal(JSON.parse(card.dataset.item));
+      } catch (e) {
+        console.error('Data parsing error', e);
+      }
+    });
+  });
+
+  closeBtn.addEventListener('click', closeModal);
+  cancelBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.classList.contains('show')) closeModal(); });
+})();
+</script>
 <?php require __DIR__ . '/includes/footer.php'; ?>
