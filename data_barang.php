@@ -2,9 +2,6 @@
 require __DIR__ . '/includes/bootstrap.php';
 require_permission('data_barang');
 
-$action = $_GET['action'] ?? 'list';
-$editing = null;
-
 // Folder penyimpanan foto barang
 $fotoDir = __DIR__ . '/uploads/barang/';
 if (!is_dir($fotoDir)) mkdir($fotoDir, 0755, true);
@@ -13,14 +10,11 @@ $allowedFotoTypes = ['image/jpeg', 'image/png', 'image/webp'];
 /** Simpan file foto yang diunggah, kembalikan nama file aman atau null jika tidak ada/gagal. */
 function simpan_foto_barang($fotoDir, $allowedFotoTypes, $kodeBarang) {
     if (empty($_FILES['foto']) || $_FILES['foto']['error'] === UPLOAD_ERR_NO_FILE) {
-        return [null, null]; // tidak ada file diunggah
+        return [null, null];
     }
-    
-    // Cek jika ukuran melebihi upload_max_filesize di php.ini
     if ($_FILES['foto']['error'] === UPLOAD_ERR_INI_SIZE || $_FILES['foto']['error'] === UPLOAD_ERR_FORM_SIZE) {
         return [null, 'Gagal: Ukuran foto terlalu besar. Maksimal 2 MB.'];
     }
-    
     if ($_FILES['foto']['error'] !== UPLOAD_ERR_OK) {
         return [null, 'Gagal mengunggah foto. Coba lagi.'];
     }
@@ -30,7 +24,7 @@ function simpan_foto_barang($fotoDir, $allowedFotoTypes, $kodeBarang) {
     if ($_FILES['foto']['size'] > 2 * 1024 * 1024) {
         return [null, 'Ukuran foto maksimal 2 MB.'];
     }
-    
+
     $ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
     $ext = preg_replace('/[^a-z0-9]/', '', $ext) ?: 'jpg';
     $safeName = 'barang-' . preg_replace('/[^a-zA-Z0-9\-]/', '', $kodeBarang) . '-' . time() . '.' . $ext;
@@ -41,7 +35,7 @@ function simpan_foto_barang($fotoDir, $allowedFotoTypes, $kodeBarang) {
 }
 
 // Cek jika POST terhapus oleh server karena file kelewat besar (post_max_size terlampaui)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && $_SERVER['CONTENT_LENGTH'] > 0) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
     flash_set('Gagal: Ukuran total file sangat besar sehingga ditolak server. Gunakan foto di bawah 2 MB.', 'error');
     redirect('data_barang.php');
 }
@@ -57,100 +51,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'save') {
     $stokMin = max(0, (int)$_POST['stok_minimum']);
     $harga = max(0, (float)$_POST['harga']);
     $tahun = (int)$_POST['tahun_masuk'];
+    $returnQ = trim($_POST['return_q'] ?? '');
 
     if ($nama === '' || $kode === '') {
         flash_set('Kode dan nama barang wajib diisi.', 'error');
-    } else {
-        $fotoLama = null;
+        redirect('data_barang.php' . ($returnQ !== '' ? '?q=' . urlencode($returnQ) : ''));
+    }
+
+    $fotoLama = null;
+    if ($id) {
+        $cek = $pdo->prepare('SELECT foto FROM items WHERE id = ?');
+        $cek->execute([$id]);
+        $fotoLama = $cek->fetch()['foto'] ?? null;
+    }
+
+    [$fotoBaru, $fotoError] = simpan_foto_barang($fotoDir, $allowedFotoTypes, $kode);
+    if ($fotoError) {
+        flash_set($fotoError, 'error');
+        redirect('data_barang.php' . ($returnQ !== '' ? '?q=' . urlencode($returnQ) : ''));
+    }
+    $hapusFotoCentang = isset($_POST['hapus_foto']);
+
+    $pdo->beginTransaction();
+    try {
         if ($id) {
-            $cek = $pdo->prepare('SELECT foto FROM items WHERE id = ?');
-            $cek->execute([$id]);
-            $fotoLama = $cek->fetch()['foto'] ?? null;
-        }
-
-        [$fotoBaru, $fotoError] = simpan_foto_barang($fotoDir, $allowedFotoTypes, $kode);
-        if ($fotoError) {
-            flash_set($fotoError, 'error');
-            redirect($id ? ('data_barang.php?action=edit&id=' . $id) : 'data_barang.php');
-        }
-
-        $hapusFotoCentang = isset($_POST['hapus_foto']);
-
-        try {
-            if ($id) {
-                if ($fotoBaru) {
-                    $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=?, foto=? WHERE id=?');
-                    $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $fotoBaru, $id]);
-                    if ($fotoLama && is_file($fotoDir . $fotoLama)) @unlink($fotoDir . $fotoLama);
-                } elseif ($hapusFotoCentang) {
-                    $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=?, foto=NULL WHERE id=?');
-                    $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $id]);
-                    if ($fotoLama && is_file($fotoDir . $fotoLama)) @unlink($fotoDir . $fotoLama);
-                } else {
-                    $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=? WHERE id=?');
-                    $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $id]);
-                }
-                flash_set('Barang diperbarui.');
+            if ($fotoBaru) {
+                $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=?, foto=? WHERE id=?');
+                $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $fotoBaru, $id]);
+                $fotoUntukHapus = $fotoLama;
+            } elseif ($hapusFotoCentang) {
+                $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=?, foto=NULL WHERE id=?');
+                $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $id]);
+                $fotoUntukHapus = $fotoLama;
             } else {
-                $stmt = $pdo->prepare('INSERT INTO items (kode, nama, jenis, satuan, stok, stok_minimum, harga, tahun_masuk, foto) VALUES (?,?,?,?,?,?,?,?,?)');
-                $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $fotoBaru]);
-                flash_set('Barang ditambahkan.');
-                $id = $pdo->lastInsertId();
+                $stmt = $pdo->prepare('UPDATE items SET kode=?, nama=?, jenis=?, satuan=?, stok=?, stok_minimum=?, harga=?, tahun_masuk=? WHERE id=?');
+                $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $id]);
+                $fotoUntukHapus = null;
             }
-        } catch (PDOException $e) {
-            flash_set('Kode barang sudah dipakai, gunakan kode lain.', 'error');
-            redirect('data_barang.php');
-        }
-    }
-    // Redirect ke edit agar user bisa langsung tambah Satuan Turunan jika diperlukan
-    redirect('data_barang.php?action=edit&id=' . $id);
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'add_satuan') {
-    csrf_check();
-    $itemId = (int)$_POST['item_id'];
-    $namaSatuan = trim($_POST['nama_satuan'] ?? '');
-    $isi = max(1, (int)($_POST['isi'] ?? 0));
-
-    if ($namaSatuan === '') {
-        flash_set('Nama satuan wajib diisi.', 'error');
-    } else {
-        $check = $pdo->prepare('SELECT id FROM item_satuan WHERE item_id = ? AND nama_satuan = ?');
-        $check->execute([$itemId, $namaSatuan]);
-        if ($check->fetch()) {
-            flash_set('Satuan "' . $namaSatuan . '" sudah ada untuk barang ini.', 'error');
         } else {
-            $pdo->prepare('INSERT INTO item_satuan (item_id, nama_satuan, isi) VALUES (?,?,?)')->execute([$itemId, $namaSatuan, $isi]);
-            flash_set('Satuan "' . $namaSatuan . '" ditambahkan (1 ' . $namaSatuan . ' = ' . $isi . ' satuan dasar).');
+            $stmt = $pdo->prepare('INSERT INTO items (kode, nama, jenis, satuan, stok, stok_minimum, harga, tahun_masuk, foto) VALUES (?,?,?,?,?,?,?,?,?)');
+            $stmt->execute([$kode, $nama, $jenis, $satuan, $stok, $stokMin, $harga, $tahun, $fotoBaru]);
+            $id = $pdo->lastInsertId();
+            $fotoUntukHapus = null;
         }
+
+        // ---------- Kelola satuan turunan, langsung dalam request yang sama ----------
+        $deleteIds = array_filter(array_map('intval', $_POST['satuan_delete_ids'] ?? []));
+        if ($deleteIds) {
+            $inPlaceholders = implode(',', array_fill(0, count($deleteIds), '?'));
+            $stmt = $pdo->prepare("DELETE FROM item_satuan WHERE item_id = ? AND id IN ($inPlaceholders)");
+            $stmt->execute(array_merge([$id], $deleteIds));
+        }
+
+        $newNama = $_POST['satuan_new_nama'] ?? [];
+        $newIsi = $_POST['satuan_new_isi'] ?? [];
+        if ($newNama) {
+            $stmtCheck = $pdo->prepare('SELECT id FROM item_satuan WHERE item_id = ? AND nama_satuan = ?');
+            $stmtIns = $pdo->prepare('INSERT INTO item_satuan (item_id, nama_satuan, isi) VALUES (?,?,?)');
+            foreach ($newNama as $i => $nm) {
+                $nm = trim($nm);
+                $isi = max(1, (int)($newIsi[$i] ?? 0));
+                if ($nm === '') continue;
+                $stmtCheck->execute([$id, $nm]);
+                if ($stmtCheck->fetch()) continue;
+                $stmtIns->execute([$id, $nm, $isi]);
+            }
+        }
+
+        $pdo->commit();
+        if ($fotoUntukHapus && is_file($fotoDir . $fotoUntukHapus)) @unlink($fotoDir . $fotoUntukHapus);
+
+        flash_set('Barang berhasil disimpan.');
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        flash_set('Kode barang sudah dipakai, gunakan kode lain.', 'error');
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        flash_set('Gagal menyimpan data.', 'error');
     }
-    redirect('data_barang.php?action=edit&id=' . $itemId);
+
+    redirect('data_barang.php' . ($returnQ !== '' ? '?q=' . urlencode($returnQ) : ''));
 }
 
-if ($action === 'delete_satuan' && isset($_GET['id']) && isset($_GET['item_id'])) {
+if (($_GET['action'] ?? '') === 'delete_satuan' && isset($_GET['id']) && isset($_GET['item_id'])) {
     $pdo->prepare('DELETE FROM item_satuan WHERE id = ? AND item_id = ?')->execute([$_GET['id'], $_GET['item_id']]);
     flash_set('Satuan turunan dihapus.');
-    redirect('data_barang.php?action=edit&id=' . (int)$_GET['item_id']);
-}
-
-if ($action === 'delete' && isset($_GET['id'])) {
-    $pdo->prepare('DELETE FROM items WHERE id = ?')->execute([$_GET['id']]);
-    flash_set('Barang dihapus.');
     redirect('data_barang.php');
 }
 
-if ($action === 'edit' && isset($_GET['id'])) {
-    $stmt = $pdo->prepare('SELECT * FROM items WHERE id = ?');
-    $stmt->execute([$_GET['id']]);
-    $editing = $stmt->fetch();
-    if (!$editing) { flash_set('Barang tidak ditemukan.', 'error'); redirect('data_barang.php'); }
-}
-
-$editingSatuanList = [];
-if ($editing) {
-    $stmt = $pdo->prepare('SELECT * FROM item_satuan WHERE item_id = ? ORDER BY isi');
-    $stmt->execute([$editing['id']]);
-    $editingSatuanList = $stmt->fetchAll();
+if (($_GET['action'] ?? '') === 'delete' && isset($_GET['id'])) {
+    $pdo->prepare('DELETE FROM items WHERE id = ?')->execute([$_GET['id']]);
+    flash_set('Barang dihapus.');
+    redirect('data_barang.php');
 }
 
 $q = trim($_GET['q'] ?? '');
@@ -174,47 +166,6 @@ require __DIR__ . '/includes/header.php';
   <div><h1>Data Barang</h1><div class="sub">Manajemen inventaris, harga, dan satuan barang</div></div>
 </div>
 
-<?php 
-// Hanya tampilkan form kelola satuan jika sedang dalam mode 'edit' setelah menyimpan
-if ($editing): 
-?>
-<div class="card" style="border:1px solid var(--accent); box-shadow:0 0 0 4px rgba(59,130,246,.1);">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-    <h3 style="margin:0;">Kelola Satuan Turunan — <?= e($editing['nama']) ?></h3>
-    <a href="data_barang.php" class="btn btn-ghost" style="padding:6px 12px; font-size:12px;">Selesai / Tutup</a>
-  </div>
-  <p class="helptext" style="margin-top:0;">Tambahkan satuan kemasan lain (mis. Box, Kardus). Admin bisa memilih satuan ini saat mencatat transaksi.</p>
-
-  <?php if ($editingSatuanList): ?>
-  <table class="unit-table" style="margin-bottom:16px;">
-    <thead><tr><th>Nama satuan</th><th>Setara dengan</th><th></th></tr></thead>
-    <tbody>
-      <?php foreach ($editingSatuanList as $s): ?>
-      <tr>
-        <td><span class="unit-badge"><?= e($s['nama_satuan']) ?></span></td>
-        <td>1 <?= e($s['nama_satuan']) ?> = <b><?= (int)$s['isi'] ?> <?= e($editing['satuan']) ?></b></td>
-        <td class="actions-cell">
-          <a class="icon-btn danger" href="?action=delete_satuan&id=<?= e($s['id']) ?>&item_id=<?= e($editing['id']) ?>" onclick="return confirm('Hapus satuan ini?');">Hapus</a>
-        </td>
-      </tr>
-      <?php endforeach; ?>
-    </tbody>
-  </table>
-  <?php else: ?>
-    <div class="empty" style="margin-bottom:16px;"><b>Belum ada satuan turunan</b>Barang ini hanya bisa dicatat dalam satuan dasar (<?= e($editing['satuan']) ?>).</div>
-  <?php endif; ?>
-
-  <form method="post" class="form-row" style="align-items:end; padding-top:12px; border-top:1px dashed var(--line);">
-    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-    <input type="hidden" name="do" value="add_satuan">
-    <input type="hidden" name="item_id" value="<?= e($editing['id']) ?>">
-    <div class="field"><label>Nama satuan baru</label><input name="nama_satuan" placeholder="mis. Box, Kardus, Dus" required></div>
-    <div class="field"><label>Setara berapa <?= e($editing['satuan']) ?>?</label><input type="number" min="1" name="isi" placeholder="mis. 10" required></div>
-    <div class="field"><button class="btn btn-primary" type="submit">Tambah Satuan</button></div>
-  </form>
-</div>
-<?php endif; ?>
-
 <style>
   .db-summary-card{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;
     background:linear-gradient(135deg,var(--c-blue-bg),var(--c-teal-bg));border:1px solid var(--line);
@@ -237,9 +188,7 @@ if ($editing):
     overflow:hidden;box-shadow:var(--shadow-card);cursor:pointer;display:flex;flex-direction:column;
     transition:transform .15s var(--ease), box-shadow .15s var(--ease), border-color .15s var(--ease);}
   .db-card:hover{transform:translateY(-3px);box-shadow:0 24px 48px -20px rgba(0,0,0,.45);border-color:var(--accent);}
-  .db-card.editing{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.18);}
 
-  /* Kartu Tambah Barang (+) */
   .db-card-add{border:2px dashed var(--line);background:transparent;justify-content:center;align-items:center;min-height:240px;text-align:center;padding:20px;}
   .db-card-add:hover{border-color:var(--accent);background:rgba(59,130,246,.04);}
   .db-card-add-icon{width:54px;height:54px;border-radius:50%;background:var(--paper-sunk);border:1px solid var(--line);
@@ -263,38 +212,87 @@ if ($editing):
   .db-meta-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;}
   .db-satuan-extra{font-size:10px;color:var(--text-dim);}
 
-  /* ---------- Modal Form Ala Shopee ---------- */
+  /* ---------- Modal shell ---------- */
   .db-modal-overlay{position:fixed;inset:0;background:rgba(6,9,16,.75);z-index:200;
-    display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px);}
+    display:none;align-items:flex-start;justify-content:center;padding:32px 20px;backdrop-filter:blur(3px);overflow-y:auto;}
   .db-modal-overlay.show{display:flex;}
   .db-modal{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius-lg);
-    width:min(850px,100%);max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-pop);position:relative;}
+    width:min(920px,100%);box-shadow:var(--shadow-pop);position:relative;margin-bottom:32px;}
   .db-modal-close{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:50%;
     background:var(--paper-sunk);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
     cursor:pointer;color:var(--text-dim);z-index:10;transition:background .15s ease;}
   .db-modal-close:hover{background:var(--accent);color:#fff;}
-  
-  .db-modal-inner{display:grid;grid-template-columns:300px 1fr;gap:0;}
-  @media (max-width:720px){ .db-modal-inner{grid-template-columns:1fr;} }
 
-  .db-modal-photo{background:var(--paper-sunk);display:flex;align-items:center;justify-content:center;
-    aspect-ratio:1/1;overflow:hidden;position:relative;border-right:1px solid var(--line-soft);}
+  .db-modal-header{padding:22px 28px 18px;border-bottom:1px solid var(--line-soft);}
+  .db-modal-header h3{margin:0;font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;}
+  .db-modal-header p{margin:4px 0 0;font-size:12.5px;color:var(--text-dim);}
+
+  .db-modal-body{padding:22px 28px 26px;display:grid;grid-template-columns:220px 1fr;gap:26px;}
+  @media (max-width:760px){ .db-modal-body{grid-template-columns:1fr;} }
+
+  /* Kolom foto kiri */
+  .db-photo-col{display:flex;flex-direction:column;gap:10px;}
+  .db-modal-photo{width:100%;aspect-ratio:1/1;background:var(--paper-sunk);border:1.5px dashed var(--line);
+    border-radius:var(--radius);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
   .db-modal-photo img{width:100%;height:100%;object-fit:cover;}
+  .db-photo-upload-btn{width:100%;font-size:12px;padding:9px 10px;}
+  .db-photo-hint{font-size:10.5px;color:var(--text-faint);text-align:center;line-height:1.5;}
 
-  .db-modal-info{padding:26px 28px;}
-  
-  /* Input Custom */
-  .db-shopee-title-input { width: 100%; font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; border: none; background: transparent; color: var(--text); padding: 0; outline: none; margin-bottom: 15px; }
-  .db-shopee-title-input:focus { border-bottom: 2px dashed var(--accent); }
-  .db-shopee-title-input::placeholder { color: var(--text-dim); }
+  /* Kolom form kanan */
+  .db-form-col{display:flex;flex-direction:column;gap:20px;min-width:0;}
 
-  .db-shopee-label { display: block; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; margin-bottom: 6px; }
-  .db-shopee-input { width: 100%; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-sunk); color: var(--text); font-size: 13.5px; box-sizing: border-box; }
-  .db-shopee-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,.16); }
+  .db-section{border:1px solid var(--line-soft);border-radius:var(--radius-sm);background:var(--paper-sunk);
+    padding:16px 18px;}
+  .db-section-head{display:flex;align-items:center;gap:9px;margin-bottom:14px;}
+  .db-section-ic{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;background:var(--c-blue-bg);color:var(--accent);}
+  .db-section-title{font-size:12.5px;font-weight:700;color:var(--text);}
+  .db-section-sub{font-size:10.5px;color:var(--text-dim);margin-top:1px;}
 
-  .db-modal-price-box { background: var(--c-blue-bg); border: 1px solid rgba(59,130,246,.25); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 18px; }
-  .db-modal-price-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; font-weight: 700; }
-  .db-shopee-price-input { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 700; color: var(--accent); background: transparent; border: none; outline: none; width: 100%; margin-top: 2px; }
+  .db-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .db-field-grid.cols-3{grid-template-columns:1fr 1fr 1fr;}
+  @media (max-width:480px){ .db-field-grid,.db-field-grid.cols-3{grid-template-columns:1fr;} }
+  .db-field{display:flex;flex-direction:column;gap:6px;}
+  .db-field.span-2{grid-column:span 2;}
+  @media (max-width:480px){ .db-field.span-2{grid-column:span 1;} }
+
+  .db-shopee-label{font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;font-weight:700;}
+  .db-shopee-input{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;
+    background:var(--paper-card);color:var(--text);font-size:13px;box-sizing:border-box;font-family:'Inter',Arial,sans-serif;}
+  .db-shopee-input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.16);}
+
+  .db-nama-input{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;padding:10px 12px;}
+
+  .db-harga-wrap{position:relative;}
+  .db-harga-wrap::before{content:'Rp';position:absolute;left:12px;top:50%;transform:translateY(-50%);
+    font-size:12px;font-weight:700;color:var(--text-dim);pointer-events:none;}
+  .db-harga-wrap input{padding-left:34px;font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--accent);}
+
+  .db-hapus-foto-check{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-dim);
+    cursor:pointer;font-weight:500;margin-top:2px;}
+
+  /* Satuan turunan */
+  .db-unit-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+  .db-unit-row{display:flex;align-items:center;gap:8px;background:var(--paper-card);border:1px solid var(--line);
+    border-radius:8px;padding:7px 10px;font-size:12px;}
+  .db-unit-row-badge{font-family:'IBM Plex Mono',monospace;font-weight:700;background:var(--c-indigo-bg);
+    color:var(--c-indigo);padding:2px 8px;border-radius:10px;font-size:10.5px;flex-shrink:0;}
+  .db-unit-row-text{flex:1;color:var(--text-dim);}
+  .db-unit-row-remove{border:none;background:transparent;color:var(--text-faint);cursor:pointer;font-size:14px;
+    padding:2px 6px;border-radius:6px;flex-shrink:0;}
+  .db-unit-row-remove:hover{background:rgba(248,113,113,.15);color:#f87171;}
+  .db-unit-empty{font-size:11.5px;color:var(--text-faint);font-style:italic;padding:2px 0 8px;}
+  .db-unit-add-row{display:flex;gap:8px;align-items:center;}
+  .db-unit-add-row input{padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;background:var(--paper-card);
+    color:var(--text);font-size:12px;box-sizing:border-box;}
+  .db-unit-add-row input[name="_unit_nama_tmp"]{flex:1.4;}
+  .db-unit-add-row input[name="_unit_isi_tmp"]{flex:1;}
+  .db-unit-add-btn{flex-shrink:0;font-size:12px;padding:8px 14px;white-space:nowrap;}
+
+  .db-modal-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:16px 28px;border-top:1px solid var(--line-soft);background:var(--paper-sunk);
+    border-radius:0 0 var(--radius-lg) var(--radius-lg);flex-wrap:wrap;}
+  .db-modal-footer-right{display:flex;gap:10px;}
 </style>
 
 <div class="db-summary-card">
@@ -319,7 +317,6 @@ if ($editing):
 </div>
 
 <div class="db-grid">
-  <!-- KARTU 1: Tombol Tambah Barang (+) -->
   <div class="db-card db-card-add" id="btnTambahBarang">
     <div class="db-card-add-icon">+</div>
     <div style="font-size:14px;font-weight:700;color:var(--text);">Tambah Barang</div>
@@ -331,7 +328,7 @@ if ($editing):
       $stokMenipis = (int)$it['stok'] <= (int)$it['stok_minimum'] && (int)$it['stok_minimum'] > 0;
       $satuanList = [];
       if (!empty($satuanCounts[$it['id']])) {
-          $stmtS = $pdo->prepare('SELECT nama_satuan, isi FROM item_satuan WHERE item_id = ? ORDER BY isi');
+          $stmtS = $pdo->prepare('SELECT id, nama_satuan, isi FROM item_satuan WHERE item_id = ? ORDER BY isi');
           $stmtS->execute([$it['id']]);
           $satuanList = $stmtS->fetchAll();
       }
@@ -339,11 +336,10 @@ if ($editing):
           'id' => $it['id'], 'kode' => $it['kode'], 'nama' => $it['nama'], 'jenis' => $it['jenis'],
           'satuan' => $it['satuan'], 'stok' => (int)$it['stok'], 'stokMinimum' => (int)$it['stok_minimum'],
           'harga' => (float)($it['harga'] ?? 0), 'tahunMasuk' => (int)$it['tahun_masuk'], 'hasFoto' => !empty($it['foto']),
-          'satuanList' => array_map(fn($s) => ['nama' => $s['nama_satuan'], 'isi' => (int)$s['isi']], $satuanList),
+          'satuanList' => array_map(fn($s) => ['id' => (int)$s['id'], 'nama' => $s['nama_satuan'], 'isi' => (int)$s['isi']], $satuanList),
       ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
-      $isEditing = $editing && (int)$editing['id'] === (int)$it['id'];
     ?>
-      <div class="db-card js-open-detail <?= $isEditing ? 'editing' : '' ?>" data-item='<?= $itemJson ?>'>
+      <div class="db-card js-open-detail" data-item='<?= $itemJson ?>'>
         <div class="db-photo">
           <?php if (!empty($it['foto'])): ?>
             <img src="serve_foto_barang.php?id=<?= (int)$it['id'] ?>" alt="Foto <?= e($it['nama']) ?>">
@@ -372,88 +368,144 @@ if ($editing):
 <?php endif; ?>
 
 <!-- ========================================== -->
-<!-- MODAL ALA SHOPEE (INPUT / EDIT BARANG)    -->
+<!-- MODAL (TAMBAH / UBAH BARANG + SATUAN)      -->
 <!-- ========================================== -->
 <div class="db-modal-overlay" id="dbModalOverlay">
   <div class="db-modal">
     <div class="db-modal-close" id="dbModalClose">✕</div>
-    <div class="db-modal-inner">
-      
-      <!-- KIRI: Preview Foto -->
-      <div class="db-modal-photo">
-        <img id="dbModalPhotoPreview" src="" alt="Preview Foto" style="display:none;">
-        <div id="dbModalPhotoPlaceholder" class="db-photo-placeholder" style="display:flex;align-items:center;justify-content:center;">
-          <?= icon('box', 48) ?>
+
+    <div class="db-modal-header">
+      <h3 id="dbModalTitle">Tambah Barang</h3>
+      <p id="dbModalSubtitle">Isi informasi barang, harga, stok, foto, dan satuan sekaligus — semua tersimpan dalam satu klik.</p>
+    </div>
+
+    <form method="post" id="dbModalForm" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <input type="hidden" name="do" value="save">
+      <input type="hidden" name="id" id="dbModalIdInput">
+      <input type="hidden" name="return_q" value="<?= e($q) ?>">
+      <div id="dbHiddenSatuanFields"></div>
+
+      <div class="db-modal-body">
+
+        <!-- ===== Kolom kiri: Foto ===== -->
+        <div class="db-photo-col">
+          <div class="db-modal-photo">
+            <img id="dbModalPhotoPreview" src="" alt="Preview Foto" style="display:none;">
+            <div id="dbModalPhotoPlaceholder" class="db-photo-placeholder" style="display:flex;align-items:center;justify-content:center;">
+              <?= icon('box', 44) ?>
+            </div>
+          </div>
+          <label class="btn btn-ghost db-photo-upload-btn" for="dbModalFoto" style="cursor:pointer;">Pilih Foto</label>
+          <input type="file" name="foto" id="dbModalFoto" accept="image/jpeg,image/png,image/webp" style="display:none;">
+          <div class="db-photo-hint">JPG / PNG / WebP, maks 2 MB</div>
+
+          <div id="dbModalHapusFotoWrap" style="display:none;">
+            <label class="db-hapus-foto-check">
+              <input type="checkbox" name="hapus_foto" value="1"> Hapus foto lama
+            </label>
+          </div>
+        </div>
+
+        <!-- ===== Kolom kanan: Form bertahap ===== -->
+        <div class="db-form-col">
+
+          <!-- Section 1: Informasi Dasar -->
+          <div class="db-section">
+            <div class="db-section-head">
+              <div class="db-section-ic"><?= icon('box', 14) ?></div>
+              <div>
+                <div class="db-section-title">Informasi Dasar</div>
+                <div class="db-section-sub">Nama, kode, dan kategori barang</div>
+              </div>
+            </div>
+
+            <div class="db-field" style="margin-bottom:12px;">
+              <span class="db-shopee-label">Nama Barang</span>
+              <input type="text" name="nama" id="dbModalNama" class="db-shopee-input db-nama-input" placeholder="mis. Kertas HVS A4" required>
+            </div>
+
+            <div class="db-field-grid">
+              <div class="db-field">
+                <span class="db-shopee-label">Kode Barang</span>
+                <input type="text" name="kode" id="dbModalKode" class="db-shopee-input" placeholder="mis. ATK-0003" required>
+              </div>
+              <div class="db-field">
+                <span class="db-shopee-label">Jenis / Kategori</span>
+                <input type="text" name="jenis" id="dbModalJenis" class="db-shopee-input" placeholder="mis. Alat Tulis">
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 2: Harga & Stok -->
+          <div class="db-section">
+            <div class="db-section-head">
+              <div class="db-section-ic"><?= icon('tag', 14) ?></div>
+              <div>
+                <div class="db-section-title">Harga &amp; Stok</div>
+                <div class="db-section-sub">Harga satuan, jumlah stok, dan satuan dasar</div>
+              </div>
+            </div>
+
+            <div class="db-field" style="margin-bottom:12px;">
+              <span class="db-shopee-label">Harga Satuan</span>
+              <div class="db-harga-wrap">
+                <input type="number" min="0" step="1" name="harga" id="dbModalHarga" class="db-shopee-input" placeholder="0" required>
+              </div>
+            </div>
+
+            <div class="db-field-grid cols-3">
+              <div class="db-field">
+                <span class="db-shopee-label">Satuan Dasar</span>
+                <input type="text" name="satuan" id="dbModalSatuan" class="db-shopee-input" placeholder="rim / pcs" required>
+              </div>
+              <div class="db-field">
+                <span class="db-shopee-label">Jumlah Stok</span>
+                <input type="number" min="0" name="stok" id="dbModalStok" class="db-shopee-input" placeholder="0" required>
+              </div>
+              <div class="db-field">
+                <span class="db-shopee-label">Stok Minimum</span>
+                <input type="number" min="0" name="stok_minimum" id="dbModalStokMin" class="db-shopee-input" placeholder="0" required>
+              </div>
+            </div>
+
+            <div class="db-field" style="margin-top:12px;max-width:160px;">
+              <span class="db-shopee-label">Tahun Masuk</span>
+              <input type="number" name="tahun_masuk" id="dbModalTahun" class="db-shopee-input" placeholder="<?= date('Y') ?>">
+            </div>
+          </div>
+
+          <!-- Section 3: Satuan Turunan -->
+          <div class="db-section">
+            <div class="db-section-head">
+              <div class="db-section-ic"><?= icon('clipboard', 14) ?></div>
+              <div>
+                <div class="db-section-title">Satuan Turunan <span style="font-weight:400;color:var(--text-dim);">(opsional)</span></div>
+                <div class="db-section-sub">Kemasan lain, mis. Box = 10 Rim — tersimpan otomatis bersama data barang</div>
+              </div>
+            </div>
+
+            <div class="db-unit-list" id="dbUnitList"></div>
+            <div id="dbUnitEmpty" class="db-unit-empty">Belum ada satuan turunan.</div>
+
+            <div class="db-unit-add-row">
+              <input type="text" name="_unit_nama_tmp" id="dbUnitNamaTmp" placeholder="Nama satuan (mis. Box)">
+              <input type="number" min="1" name="_unit_isi_tmp" id="dbUnitIsiTmp" placeholder="Isi (mis. 10)">
+              <button type="button" class="btn btn-ghost db-unit-add-btn" id="dbUnitAddBtn">+ Tambah</button>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      <!-- KANAN: Form Detail -->
-      <div class="db-modal-info">
-        <form method="post" id="dbModalForm" enctype="multipart/form-data">
-          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-          <input type="hidden" name="do" value="save">
-          <input type="hidden" name="id" id="dbModalIdInput">
-
-          <!-- Nama Barang -->
-          <input type="text" name="nama" id="dbModalNama" class="db-shopee-title-input" placeholder="Masukkan Nama Barang..." required>
-
-          <!-- Harga -->
-          <div class="db-modal-price-box">
-             <div class="db-modal-price-label">Harga Satuan (Rp)</div>
-             <input type="number" min="0" step="1" name="harga" id="dbModalHarga" class="db-shopee-price-input" placeholder="0" required>
-          </div>
-
-          <!-- Grid Input Lainnya -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-            <div>
-              <label class="db-shopee-label">Kode Barang</label>
-              <input type="text" name="kode" id="dbModalKode" class="db-shopee-input" placeholder="mis. ATK-0003" required>
-            </div>
-            <div>
-              <label class="db-shopee-label">Jenis / Kategori</label>
-              <input type="text" name="jenis" id="dbModalJenis" class="db-shopee-input" placeholder="mis. Alat Tulis">
-            </div>
-            <div>
-              <label class="db-shopee-label">Satuan Dasar</label>
-              <input type="text" name="satuan" id="dbModalSatuan" class="db-shopee-input" placeholder="rim, pcs, pack" required>
-            </div>
-            <div>
-              <label class="db-shopee-label">Tahun Masuk</label>
-              <input type="number" name="tahun_masuk" id="dbModalTahun" class="db-shopee-input" placeholder="<?= date('Y') ?>">
-            </div>
-            <div>
-              <label class="db-shopee-label">Jumlah Stok</label>
-              <input type="number" min="0" name="stok" id="dbModalStok" class="db-shopee-input" placeholder="0" required>
-            </div>
-            <div>
-              <label class="db-shopee-label">Stok Minimum</label>
-              <input type="number" min="0" name="stok_minimum" id="dbModalStokMin" class="db-shopee-input" placeholder="0" required>
-            </div>
-            <div style="grid-column: 1 / -1;">
-              <label class="db-shopee-label">Upload Foto Barang</label>
-              <input type="file" name="foto" id="dbModalFoto" accept="image/jpeg,image/png,image/webp" class="db-shopee-input" style="padding:6px 10px;">
-            </div>
-          </div>
-
-          <!-- Hapus Foto & Kelola Satuan Text -->
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
-            <div id="dbModalHapusFotoWrap" style="display:none;">
-              <label style="font-size:12px; font-weight:600; cursor:pointer; color:var(--text-dim); display:flex; align-items:center; gap:6px;">
-                <input type="checkbox" name="hapus_foto" value="1"> Hapus foto lama
-              </label>
-            </div>
-            <div id="dbModalUnitInfo" style="font-size:11px; color:var(--text-dim); font-weight:600;"></div>
-          </div>
-
-          <!-- Tombol Aksi -->
-          <div style="display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line-soft);padding-top:16px;">
-            <a href="#" class="btn btn-ghost" id="dbModalHapusBtn" style="display:none; color:#f87171;" onclick="return confirm('Yakin ingin menghapus barang ini?');">Hapus Barang</a>
-            <button type="button" class="btn btn-ghost" id="dbModalCancelBtn">Batal</button>
-            <button type="submit" class="btn btn-primary" style="padding:10px 22px;font-size:13.5px;">Simpan Data</button>
-          </div>
-        </form>
+      <div class="db-modal-footer">
+        <a href="#" class="btn btn-ghost" id="dbModalHapusBtn" style="display:none; color:#f87171;" onclick="return confirm('Yakin ingin menghapus barang ini? Riwayat transaksi terkait ikut terhapus.');">Hapus Barang</a>
+        <div class="db-modal-footer-right">
+          <button type="button" class="btn btn-ghost" id="dbModalCancelBtn">Batal</button>
+          <button type="submit" class="btn btn-primary" style="padding:10px 24px;font-size:13.5px;">Simpan Data</button>
+        </div>
       </div>
-    </div>
+    </form>
   </div>
 </div>
 
@@ -464,13 +516,14 @@ if ($editing):
   var cancelBtn = document.getElementById('dbModalCancelBtn');
   var form = document.getElementById('dbModalForm');
   var btnTambah = document.getElementById('btnTambahBarang');
-  
+  var modalTitle = document.getElementById('dbModalTitle');
+  var modalSubtitle = document.getElementById('dbModalSubtitle');
+
   var photoPreview = document.getElementById('dbModalPhotoPreview');
   var photoPlaceholder = document.getElementById('dbModalPhotoPlaceholder');
   var hapusFotoWrap = document.getElementById('dbModalHapusFotoWrap');
   var hapusBtn = document.getElementById('dbModalHapusBtn');
-  var unitInfo = document.getElementById('dbModalUnitInfo');
-  
+
   var inputId = document.getElementById('dbModalIdInput');
   var inputNama = document.getElementById('dbModalNama');
   var inputHarga = document.getElementById('dbModalHarga');
@@ -482,25 +535,110 @@ if ($editing):
   var inputTahun = document.getElementById('dbModalTahun');
   var inputFoto = document.getElementById('dbModalFoto');
 
+  // ---------- Satuan turunan: state lokal ----------
+  var unitList = document.getElementById('dbUnitList');
+  var unitEmpty = document.getElementById('dbUnitEmpty');
+  var unitNamaTmp = document.getElementById('dbUnitNamaTmp');
+  var unitIsiTmp = document.getElementById('dbUnitIsiTmp');
+  var unitAddBtn = document.getElementById('dbUnitAddBtn');
+  var hiddenFieldsWrap = document.getElementById('dbHiddenSatuanFields');
+
+  var existingUnits = [];
+  var newUnits = [];
+
   var nextKodeGenerator = '<?= e($nextKode) ?>';
 
-  // Live preview foto & VALIDASI FRONTEND UNTUK UKURAN MAKS 2MB
+  function renderUnitList() {
+    unitList.innerHTML = '';
+    var visibleExisting = existingUnits.filter(function (u) { return !u.removed; });
+    var total = visibleExisting.length + newUnits.length;
+    unitEmpty.style.display = total === 0 ? 'block' : 'none';
+
+    visibleExisting.forEach(function (u) {
+      var row = document.createElement('div');
+      row.className = 'db-unit-row';
+      var badge = document.createElement('span');
+      badge.className = 'db-unit-row-badge';
+      badge.textContent = u.nama;
+      var text = document.createElement('span');
+      text.className = 'db-unit-row-text';
+      text.textContent = '1 ' + u.nama + ' = ' + u.isi + ' ' + (inputSatuan.value || 'satuan dasar');
+      var rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'db-unit-row-remove';
+      rm.innerHTML = '✕';
+      rm.addEventListener('click', function () { u.removed = true; renderUnitList(); });
+      row.appendChild(badge); row.appendChild(text); row.appendChild(rm);
+      unitList.appendChild(row);
+    });
+
+    newUnits.forEach(function (u, idx) {
+      var row = document.createElement('div');
+      row.className = 'db-unit-row';
+      var badge = document.createElement('span');
+      badge.className = 'db-unit-row-badge';
+      badge.textContent = u.nama;
+      var text = document.createElement('span');
+      text.className = 'db-unit-row-text';
+      text.textContent = '1 ' + u.nama + ' = ' + u.isi + ' ' + (inputSatuan.value || 'satuan dasar') + ' (baru)';
+      var rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'db-unit-row-remove';
+      rm.innerHTML = '✕';
+      rm.addEventListener('click', function () { newUnits.splice(idx, 1); renderUnitList(); });
+      row.appendChild(badge); row.appendChild(text); row.appendChild(rm);
+      unitList.appendChild(row);
+    });
+  }
+
+  unitAddBtn.addEventListener('click', function () {
+    var nm = unitNamaTmp.value.trim();
+    var isi = parseInt(unitIsiTmp.value, 10);
+    if (!nm) { unitNamaTmp.focus(); return; }
+    if (!isi || isi < 1) { unitIsiTmp.focus(); return; }
+
+    var dup = existingUnits.some(function (u) { return !u.removed && u.nama.toLowerCase() === nm.toLowerCase(); })
+      || newUnits.some(function (u) { return u.nama.toLowerCase() === nm.toLowerCase(); });
+    if (dup) { alert('Satuan "' + nm + '" sudah ada di daftar.'); return; }
+
+    newUnits.push({ nama: nm, isi: isi });
+    unitNamaTmp.value = '';
+    unitIsiTmp.value = '';
+    unitNamaTmp.focus();
+    renderUnitList();
+  });
+
+  unitIsiTmp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); unitAddBtn.click(); } });
+  unitNamaTmp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); unitIsiTmp.focus(); } });
+
+  form.addEventListener('submit', function () {
+    hiddenFieldsWrap.innerHTML = '';
+    existingUnits.filter(function (u) { return u.removed; }).forEach(function (u) {
+      var h = document.createElement('input');
+      h.type = 'hidden'; h.name = 'satuan_delete_ids[]'; h.value = u.id;
+      hiddenFieldsWrap.appendChild(h);
+    });
+    newUnits.forEach(function (u) {
+      var h1 = document.createElement('input');
+      h1.type = 'hidden'; h1.name = 'satuan_new_nama[]'; h1.value = u.nama;
+      var h2 = document.createElement('input');
+      h2.type = 'hidden'; h2.name = 'satuan_new_isi[]'; h2.value = u.isi;
+      hiddenFieldsWrap.appendChild(h1);
+      hiddenFieldsWrap.appendChild(h2);
+    });
+  });
+
   inputFoto.addEventListener('change', function (e) {
     var file = e.target.files[0];
     if (file) {
-      // Cek ukuran file (Maksimal 2 MB = 2 * 1024 * 1024 bytes)
       if (file.size > 2 * 1024 * 1024) {
         alert('Gagal: Ukuran foto terlalu besar! Maksimal 2 MB.');
-        
-        // Reset input file dan preview gambar
-        inputFoto.value = ''; 
+        inputFoto.value = '';
         photoPreview.style.display = 'none';
         photoPreview.src = '';
         photoPlaceholder.style.display = 'flex';
         return;
       }
-
-      // Jika lolos, tampilkan preview foto
       var reader = new FileReader();
       reader.onload = function (evt) {
         photoPreview.src = evt.target.result;
@@ -511,29 +649,43 @@ if ($editing):
     }
   });
 
+  function resetUnitState() {
+    existingUnits = [];
+    newUnits = [];
+    unitNamaTmp.value = '';
+    unitIsiTmp.value = '';
+    renderUnitList();
+  }
+
   function openAddModal() {
     form.reset();
     inputId.value = '';
-    
+    modalTitle.textContent = 'Tambah Barang';
+    modalSubtitle.textContent = 'Isi informasi barang, harga, stok, foto, dan satuan sekaligus — semua tersimpan dalam satu klik.';
+
     photoPreview.style.display = 'none';
     photoPreview.src = '';
     photoPlaceholder.style.display = 'flex';
     hapusFotoWrap.style.display = 'none';
     hapusBtn.style.display = 'none';
-    unitInfo.textContent = '';
-    
+
     inputKode.value = nextKodeGenerator;
     inputTahun.value = new Date().getFullYear();
     inputSatuan.value = 'pcs';
 
+    resetUnitState();
+
     overlay.classList.add('show');
+    overlay.scrollTop = 0;
     document.body.style.overflow = 'hidden';
   }
 
   function openEditModal(item) {
     form.reset();
     inputId.value = item.id;
-    
+    modalTitle.textContent = 'Ubah Barang';
+    modalSubtitle.textContent = 'Perbarui data barang, foto, atau satuan turunannya di sini.';
+
     inputNama.value = item.nama || '';
     inputHarga.value = item.harga || 0;
     inputKode.value = item.kode || '';
@@ -555,16 +707,19 @@ if ($editing):
       hapusFotoWrap.style.display = 'none';
     }
 
-    if (item.satuanList && item.satuanList.length > 0) {
-       unitInfo.textContent = 'Memiliki ' + item.satuanList.length + ' satuan turunan.';
-    } else {
-       unitInfo.textContent = 'Belum ada satuan turunan.';
-    }
+    existingUnits = (item.satuanList || []).map(function (s) {
+      return { id: s.id, nama: s.nama, isi: s.isi, removed: false };
+    });
+    newUnits = [];
+    unitNamaTmp.value = '';
+    unitIsiTmp.value = '';
+    renderUnitList();
 
     hapusBtn.href = 'data_barang.php?action=delete&id=' + item.id;
     hapusBtn.style.display = 'inline-block';
 
     overlay.classList.add('show');
+    overlay.scrollTop = 0;
     document.body.style.overflow = 'hidden';
   }
 

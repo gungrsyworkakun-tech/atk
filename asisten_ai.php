@@ -237,6 +237,57 @@ function query_rekap_lengkap(PDO $pdo, $bulan, $tahun) {
     ];
 }
 
+/**
+ * Riwayat siapa menambah/mengubah/menghapus data barang, dan apa yang berubah.
+ * Sumber: tabel items_log (diisi otomatis oleh data_barang.php setiap kali disimpan).
+ */
+function query_riwayat_perubahan_barang(PDO $pdo, $namaBarang = null, $jumlahHari = 7) {
+    $jumlahHari = max(1, min(365, (int)($jumlahHari ?: 7)));
+    $sejakTanggal = date('Y-m-d', strtotime("-{$jumlahHari} day"));
+
+    if ($namaBarang) {
+        $stmt = $pdo->prepare(
+            "SELECT created_at, aksi, kode_barang, nama_barang, username, perubahan
+             FROM items_log
+             WHERE created_at >= ? AND nama_barang LIKE ?
+             ORDER BY created_at DESC LIMIT 100"
+        );
+        $stmt->execute([$sejakTanggal, '%' . $namaBarang . '%']);
+    } else {
+        $stmt = $pdo->prepare(
+            "SELECT created_at, aksi, kode_barang, nama_barang, username, perubahan
+             FROM items_log
+             WHERE created_at >= ?
+             ORDER BY created_at DESC LIMIT 100"
+        );
+        $stmt->execute([$sejakTanggal]);
+    }
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Hitung siapa yang paling aktif mengubah data, buat ringkasan ke AI.
+    $perUser = [];
+    foreach ($rows as $r) {
+        $uname = $r['username'] ?: 'tidak diketahui';
+        $perUser[$uname] = ($perUser[$uname] ?? 0) + 1;
+    }
+    arsort($perUser);
+
+    $label = $namaBarang
+        ? "Riwayat Perubahan \"{$namaBarang}\" ({$jumlahHari} hari terakhir)"
+        : "Riwayat Perubahan Data Barang ({$jumlahHari} hari terakhir)";
+
+    return [
+        'title' => $label,
+        'rows' => $rows,
+        'chart' => null,
+        'summary' => [
+            'periode_hari' => $jumlahHari,
+            'jumlah_catatan' => count($rows),
+            'per_user' => $perUser ?: null,
+        ],
+    ];
+}
+
 // ============================================================
 // Endpoint: hapus seluruh riwayat percakapan milik user yang login
 // ============================================================
@@ -314,6 +365,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'ask') {
                 case 'rekap_lengkap':
                     $block = query_rekap_lengkap($pdo, $it['bulan'] ?? null, $it['tahun'] ?? null);
                     break;
+                case 'riwayat_perubahan_barang':
+                    $block = query_riwayat_perubahan_barang($pdo, $it['nama_barang'] ?? null, $it['jumlah_hari'] ?? 7);
+                    break;
             }
             if ($block) {
                 $block['intent'] = $intentName;
@@ -326,7 +380,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'ask') {
     if ($apiError) {
         $jawaban = 'Asisten AI sedang bermasalah: ' . $apiError . ' Silakan coba lagi nanti atau hubungi admin.';
     } elseif (!$blocks) {
-        $jawaban = 'Maaf, saya belum bisa membantu pertanyaan itu. Saya bisa bantu: cek stok menipis, cek ketersediaan barang, tren grafik transaksi, daftar barang masuk/keluar per bulan atau rentang tanggal, rekap per bidang, sisa stok barang, atau rekap lengkap bulanan.';
+        $jawaban = 'Maaf, saya belum bisa membantu pertanyaan itu. Saya bisa bantu: cek stok menipis, cek ketersediaan barang, tren grafik transaksi, daftar barang masuk/keluar per bulan atau rentang tanggal, rekap per bidang, sisa stok barang, rekap lengkap bulanan, atau riwayat siapa mengubah data barang.';
     } else {
         $jawaban = ai_generate_answer($summaryForAI, $modelKey);
     }
@@ -411,8 +465,8 @@ require __DIR__ . '/includes/header.php';
   .ai-chart-card{position:relative;height:230px;margin-bottom:12px;background:var(--paper-card);
     border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px;}
 
-  .ai-table-wrap{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;}
-  .ai-table-wrap table{width:100%;font-size:11.5px;border-collapse:collapse;}
+  .ai-table-wrap{border:1px solid var(--line);border-radius:var(--radius-sm);overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .ai-table-wrap table{width:100%;min-width:420px;font-size:11.5px;border-collapse:collapse;}
   .ai-table-wrap th{background:var(--paper-sunk);color:var(--text-dim);font-weight:700;text-transform:uppercase;
     letter-spacing:.03em;font-size:9.5px;padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);}
   .ai-table-wrap td{padding:7px 10px;border-bottom:1px solid var(--line-soft);color:var(--text);}
@@ -440,6 +494,44 @@ require __DIR__ . '/includes/header.php';
   .ai-send-btn{width:44px;height:44px;border-radius:50%;padding:0;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
   .ai-send-btn:disabled{opacity:.5;cursor:not-allowed;}
   .ai-limit-note{font-size:10.5px;color:var(--text-faint);text-align:right;margin-top:6px;}
+
+  /* ============================================================
+     RESPONSIVE — layar sempit (HP/tablet portrait, <=640px)
+     ============================================================ */
+  @media (max-width: 640px) {
+    .ai-hero{flex-wrap:wrap;padding:16px;gap:12px;}
+    .ai-hero-ic{width:40px;height:40px;}
+    .ai-hero-text{flex:1 1 auto;min-width:0;}
+    .ai-hero-text h2{font-size:14.5px;}
+    .ai-hero-text p{font-size:11.5px;}
+    .ai-clear-btn{flex:1 1 100%;text-align:center;justify-content:center;}
+
+    .ai-chips{gap:6px;margin-bottom:14px;}
+    .ai-chip{font-size:11px;padding:6px 11px 6px 9px;}
+
+    .ai-chat{padding:14px;gap:14px;min-height:280px;max-height:65vh;}
+    .ai-avatar{width:26px;height:26px;border-radius:8px;font-size:10px;}
+    .ai-msg,.ai-msg.bot{max-width:calc(100% - 36px);font-size:13px;padding:10px 13px;}
+
+    .ai-chart-card{height:200px;padding:10px;}
+    .ai-table-wrap table{font-size:11px;}
+    .ai-table-wrap th,.ai-table-wrap td{padding:6px 8px;}
+
+    .ai-composer{padding:12px 14px;}
+    .ai-model-row{flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+    .ai-model-row select{flex:1;min-width:0;}
+    .ai-form{gap:8px;}
+    .ai-form input{padding:11px 12px 11px 36px;font-size:13px;}
+    .ai-input-wrap svg{left:12px;}
+    .ai-send-btn{width:40px;height:40px;}
+  }
+
+  /* Layar sangat sempit (<=380px, HP kecil) */
+  @media (max-width: 380px) {
+    .ai-hero-text h2{font-size:13.5px;}
+    .ai-hero-text p{display:none;} /* sembunyikan deskripsi panjang, judul saja cukup */
+    .ai-chat{padding:10px;}
+  }
 </style>
 
 <div class="topline">
@@ -461,6 +553,7 @@ require __DIR__ . '/includes/header.php';
     <span class="ai-chip"><?= icon('box', 13) ?>tampilkan sisa stok semua barang beserta grafiknya</span>
     <span class="ai-chip"><?= icon('clipboard', 13) ?>buatkan rekap lengkap bulan ini</span>
     <span class="ai-chip"><?= icon('search', 13) ?>ada bolpoin gak?</span>
+    <span class="ai-chip"><?= icon('shield', 13) ?>barang apa aja yang baru diedit admin minggu ini</span>
   </div>
 
   <div class="ai-panel">

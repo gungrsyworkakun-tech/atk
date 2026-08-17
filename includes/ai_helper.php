@@ -4,6 +4,11 @@
  *
  * Lapisan 1 (klasifikasi intent) dan Lapisan 3 (penyusunan jawaban) dari
  * fitur Asisten AI menggunakan Google Gemini API.
+ *
+ * PENTING: file ini HANYA boleh berisi fungsi ai_*() — komunikasi ke API AI.
+ * Fungsi query_*() (query_rekap_stok_menipis, query_cek_ketersediaan, dll)
+ * HARUS ada di asisten_ai.php saja (Lapisan 2), supaya tidak terjadi bentrok
+ * "Cannot redeclare" seperti yang barusan terjadi.
  */
 
 // 1. API Key Anda — sebaiknya pindah ke environment variable, jangan hardcode di kode.
@@ -94,6 +99,14 @@ function ai_classify_intent($question, array $daftarNamaBarang, $modelKey = GEMI
 Kamu adalah pengklasifikasi maksud pertanyaan untuk sistem inventaris ATK.
 Tanggal hari ini: {$hariIni} (bulan berjalan = {$bulanIniAngka}, tahun berjalan = {$tahunIni}).
 
+PENTING soal gaya bahasa: petugas SERING menulis santai, disingkat, ada typo, atau
+pakai bahasa sehari-hari/gaul (bukan bahasa baku) — misalnya "abis" = habis, "kaga ada"/
+"ga ada" = tidak ada, "berapaan" = berapa, "cekin" = cek, "gan"/"min" cuma sapaan yang
+diabaikan. JANGAN mudah menjatuhkan ke "tidak_dikenali" hanya karena penulisannya tidak
+baku, typo, atau terpotong — coba pahami maksud sebenarnya semaksimal mungkin dulu.
+Hanya pakai "tidak_dikenali" kalau BENAR-BENAR tidak ada satu pun bagian pertanyaan yang
+nyambung ke topik stok/barang/transaksi/laporan ATK sama sekali.
+
 Pertanyaan petugas BISA mengandung LEBIH DARI SATU maksud sekaligus (misal: minta
 daftar barang keluar SEKALIGUS minta grafik). Balas HANYA JSON murni berisi array
 "intents", tanpa penjelasan tambahan, tanpa markdown, tanpa teks lain di luar JSON.
@@ -122,7 +135,12 @@ Setiap elemen array adalah SALAH SATU dari intent berikut:
 9. "rekap_lengkap" - LAPORAN/REKAP LENGKAP mencakup semua data penting (masuk, keluar,
    stok menipis, per bidang) untuk SATU BULAN. Field "bulan" (1-12, default bulan
    berjalan), "tahun" opsional (default tahun berjalan).
-10. "tidak_dikenali" - HANYA jika TIDAK ADA satu pun bagian pertanyaan yang cocok 1-9
+10. "riwayat_perubahan_barang" - SIAPA menambah/mengubah/menghapus DATA BARANG (bukan
+    transaksi masuk/keluar), dan APA yang diubah. Contoh: "barang apa yang baru diedit
+    admin", "siapa yang nambahin barang minggu ini", "riwayat perubahan data barang".
+    Field "jumlah_hari" (default 7, rentang pencarian ke belakang), "nama_barang"
+    (KOSONGKAN kalau user tidak sebut barang tertentu).
+11. "tidak_dikenali" - HANYA jika TIDAK ADA satu pun bagian pertanyaan yang cocok 1-10
 
 Contoh sebagian nama barang yang ada di sistem:
 {$daftarBarangText}
@@ -134,6 +152,8 @@ Contoh format keluaran (JSON murni, satu objek saja):
 {"intents": [{"intent": "rekap_bidang"}]}
 {"intents": [{"intent": "stok_barang"}]}
 {"intents": [{"intent": "rekap_lengkap", "bulan": 7, "tahun": 2026}]}
+{"intents": [{"intent": "riwayat_perubahan_barang", "jumlah_hari": 7}]}
+{"intents": [{"intent": "riwayat_perubahan_barang", "jumlah_hari": 30, "nama_barang": "Pulpen"}]}
 {"intents": [{"intent": "detail_transaksi", "tipe": "keluar", "periode": "hari_ini"}, {"intent": "grafik_transaksi", "jumlah_bulan": 6}]}
 {"intents": [{"intent": "tidak_dikenali"}]}
 SYS;

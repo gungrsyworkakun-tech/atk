@@ -3,16 +3,28 @@ require __DIR__ . '/includes/bootstrap.php';
 require_permission('asisten_ai');
 
 $result = $_SESSION['ai_last_result'] ?? null;
-if (!$result || empty($result['data'])) {
-    http_response_code(400);
-    die('Tidak ada data untuk diekspor. Silakan tanya ke Asisten AI terlebih dahulu, baru klik Export.');
-}
+$blocks = $result['blocks'] ?? [];
 
-$data = $result['data'];
-$cols = array_keys($data[0]);
+// Ambil hanya blok yang punya data tabel (skip yang cuma grafik tanpa rows,
+// atau summary-only tanpa rows).
+$exportableBlocks = array_values(array_filter($blocks, function ($b) {
+    return !empty($b['rows']) && is_array($b['rows']);
+}));
+
+if (!$exportableBlocks) {
+    http_response_code(400);
+    die('Tidak ada data untuk diekspor. Silakan tanya ke Asisten AI terlebih dahulu (yang menghasilkan tabel data), baru klik Export.');
+}
 
 function xEsc($str) {
     return htmlspecialchars((string)$str, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+}
+
+/** Nama sheet Excel maksimal 31 karakter & tidak boleh mengandung karakter tertentu. */
+function safeSheetName($title, $fallbackIndex) {
+    $name = trim((string)$title) ?: ('Hasil ' . $fallbackIndex);
+    $name = preg_replace('/[\\\\\/\?\*\[\]\:]/', '-', $name);
+    return mb_substr($name, 0, 31);
 }
 
 ob_start();
@@ -48,31 +60,38 @@ echo '<Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight=
 echo '</Style>';
 echo '</Styles>';
 
-echo '<Worksheet ss:Name="Hasil Asisten AI">';
-echo '<Table>';
-foreach ($cols as $c) echo '<Column ss:Width="120"/>';
+foreach ($exportableBlocks as $idx => $block) {
+    $rows = $block['rows'];
+    $cols = array_keys($rows[0]);
+    $sheetName = safeSheetName($block['title'] ?? '', $idx + 1);
 
-echo '<Row ss:Height="24"><Cell ss:StyleID="sTitle" ss:MergeAcross="' . (count($cols) - 1) . '"><Data ss:Type="String">Hasil Asisten AI</Data></Cell></Row>';
-echo '<Row ss:Height="18"><Cell ss:StyleID="sMeta" ss:MergeAcross="' . (count($cols) - 1) . '"><Data ss:Type="String">Pertanyaan: ' . xEsc($result['question'] ?? '-') . ' — diekspor ' . xEsc(date('d F Y, H:i')) . '</Data></Cell></Row>';
-echo '<Row ss:Height="6"></Row>';
+    echo '<Worksheet ss:Name="' . xEsc($sheetName) . '">';
+    echo '<Table>';
+    foreach ($cols as $c) echo '<Column ss:Width="120"/>';
 
-echo '<Row ss:Height="20">';
-foreach ($cols as $c) {
-    echo '<Cell ss:StyleID="sHeader"><Data ss:Type="String">' . xEsc(ucwords(str_replace('_', ' ', $c))) . '</Data></Cell>';
-}
-echo '</Row>';
+    echo '<Row ss:Height="24"><Cell ss:StyleID="sTitle" ss:MergeAcross="' . (count($cols) - 1) . '"><Data ss:Type="String">' . xEsc($block['title'] ?? 'Hasil Asisten AI') . '</Data></Cell></Row>';
+    echo '<Row ss:Height="18"><Cell ss:StyleID="sMeta" ss:MergeAcross="' . (count($cols) - 1) . '"><Data ss:Type="String">Pertanyaan: ' . xEsc($result['question'] ?? '-') . ' — diekspor ' . xEsc(date('d F Y, H:i')) . '</Data></Cell></Row>';
+    echo '<Row ss:Height="6"></Row>';
 
-foreach ($data as $i => $row) {
-    $style = $i % 2 === 1 ? 'sDataAlt' : 'sData';
-    echo '<Row>';
+    echo '<Row ss:Height="20">';
     foreach ($cols as $c) {
-        echo '<Cell ss:StyleID="' . $style . '"><Data ss:Type="String">' . xEsc($row[$c] ?? '') . '</Data></Cell>';
+        echo '<Cell ss:StyleID="sHeader"><Data ss:Type="String">' . xEsc(ucwords(str_replace('_', ' ', $c))) . '</Data></Cell>';
     }
     echo '</Row>';
+
+    foreach ($rows as $i => $row) {
+        $style = $i % 2 === 1 ? 'sDataAlt' : 'sData';
+        echo '<Row>';
+        foreach ($cols as $c) {
+            echo '<Cell ss:StyleID="' . $style . '"><Data ss:Type="String">' . xEsc($row[$c] ?? '') . '</Data></Cell>';
+        }
+        echo '</Row>';
+    }
+
+    echo '</Table>';
+    echo '</Worksheet>';
 }
 
-echo '</Table>';
-echo '</Worksheet>';
 echo '</Workbook>';
 
 $xmlOutput = ob_get_clean();
