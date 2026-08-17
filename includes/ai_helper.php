@@ -12,7 +12,7 @@
  */
 
 // 1. API Key Anda — sebaiknya pindah ke environment variable, jangan hardcode di kode.
-define('GEMINI_API_KEY', getenv('GEMINI_API_KEY') ?: 'AQ.Ab8RN6L-vfP0uqdNrIkGG2qjK1Xp4AVeo2JTx2LoknZ509iakA');
+define('GEMINI_API_KEY', getenv('GEMINI_API_KEY') ?: 'AQ.Ab8RN6K7-Ow57A7C0_dEC__Yz9m05UIbjOkTYsRDJHbSlPyoTg');
 
 // 2. Daftar model yang boleh dipilih pengguna (WHITELIST).
 const GEMINI_MODELS = [
