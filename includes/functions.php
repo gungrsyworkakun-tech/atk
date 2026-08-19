@@ -10,6 +10,7 @@ const MODULES = [
     'bidang'              => 'Bidang Pengambilan',
     'kelola_permintaan'   => 'Permintaan ATK Bidang',
     'asisten_ai'          => 'Asisten AI',
+    'penitipan'           => 'Penitipan ATK',
 ];
 
 // Ikon + warna badge untuk tiap menu (dipakai di sidebar & kartu shortcut dashboard).
@@ -23,6 +24,7 @@ const MODULE_META = [
     'bidang'               => ['icon' => 'building',  'color' => 'pink',   'sub' => 'Rekap pengambilan per bidang'],
     'kelola_permintaan'    => ['icon' => 'clipboard',  'color' => 'indigo', 'sub' => 'Proses & update status permintaan ATK dari bidang'],
     'asisten_ai'           => ['icon' => 'chat',       'color' => 'purple', 'sub' => 'Tanya AI seputar stok & laporan'],
+    'penitipan'            => ['icon' => 'archive',    'color' => 'amber',  'sub' => 'Barang pribadi yang dititipkan sementara ke gudang'],
 ];
 const ADMIN_META = [
     'kelola_admin'  => ['icon' => 'shield',    'color' => 'indigo', 'label' => 'Kelola Admin',  'sub' => 'Akun & hak akses admin biasa'],
@@ -85,6 +87,16 @@ function permintaan_status_class($status) {
     return $map[$status] ?? '';
 }
 
+function penitipan_status_label($status) {
+    $map = ['dititip' => 'Masih Dititip', 'diambil' => 'Sudah Diambil'];
+    return $map[$status] ?? $status;
+}
+
+function penitipan_status_class($status) {
+    $map = ['dititip' => 'st-menunggu', 'diambil' => 'st-selesai'];
+    return $map[$status] ?? '';
+}
+
 /**
  * Ikon garis (gaya Feather/Lucide) sebagai inline SVG, tanpa file/library eksternal.
  * Dipanggil langsung: <?= icon('box') ?> — sudah aman, jangan dibungkus e().
@@ -112,6 +124,8 @@ function icon($name, $size = 18) {
         'clock'         => '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path>',
         'clipboard'     => '<rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"></path><path d="M9 12h6M9 16h6"></path>',
         'chat'          => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M8 10h.01M12 10h.01M16 10h.01"></path>',
+        'archive'       => '<rect x="2" y="3" width="20" height="5" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><path d="M10 13h4"></path>',
+        'user-check'    => '<circle cx="9" cy="8" r="4"></circle><path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 1 .1"></path><path d="M16 13l2 2 4-4"></path>',
     ];
     $p = $paths[$name] ?? $paths['grid'];
     return '<svg width="' . (int)$size . '" height="' . (int)$size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';

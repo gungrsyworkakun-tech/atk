@@ -85,20 +85,31 @@ function query_grafik_transaksi(PDO $pdo, $jumlahBulan) {
     ];
 }
 
-function query_detail_transaksi(PDO $pdo, $tipe, $periode) {
+/**
+ * $scopeBidang: kalau diisi (user login dengan role 'bidang'), transaksi KELUAR
+ * dibatasi hanya ke bidang tersebut — user bidang tidak bisa melihat pengambilan
+ * bidang lain lewat Asisten AI. Transaksi MASUK (stok gudang) tetap terlihat
+ * karena bukan milik bidang tertentu.
+ */
+function query_detail_transaksi(PDO $pdo, $tipe, $periode, $scopeBidang = null) {
     $tipe = in_array($tipe, ['masuk', 'keluar'], true) ? $tipe : 'keluar';
+    $filterBidang = ($tipe === 'keluar' && $scopeBidang) ? ' AND t.bidang = ?' : '';
 
     if ($periode === 'bulan_ini') {
         $stmt = $pdo->prepare("SELECT t.tanggal, i.nama, i.kode, i.satuan, t.jumlah, t.bidang, t.penerima
             FROM transactions t JOIN items i ON i.id = t.item_id
-            WHERE t.tipe = ? AND YEAR(t.tanggal)=? AND MONTH(t.tanggal)=? ORDER BY t.tanggal DESC");
-        $stmt->execute([$tipe, date('Y'), date('n')]);
+            WHERE t.tipe = ? AND YEAR(t.tanggal)=? AND MONTH(t.tanggal)=?" . $filterBidang . " ORDER BY t.tanggal DESC");
+        $params = [$tipe, date('Y'), date('n')];
+        if ($filterBidang) $params[] = $scopeBidang;
+        $stmt->execute($params);
         $label = 'Bulan Ini';
     } else {
         $stmt = $pdo->prepare("SELECT t.tanggal, i.nama, i.kode, i.satuan, t.jumlah, t.bidang, t.penerima
             FROM transactions t JOIN items i ON i.id = t.item_id
-            WHERE t.tipe = ? AND t.tanggal = CURDATE() ORDER BY t.id DESC");
-        $stmt->execute([$tipe]);
+            WHERE t.tipe = ? AND t.tanggal = CURDATE()" . $filterBidang . " ORDER BY t.id DESC");
+        $params = [$tipe];
+        if ($filterBidang) $params[] = $scopeBidang;
+        $stmt->execute($params);
         $label = 'Hari Ini';
     }
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -110,22 +121,27 @@ function query_detail_transaksi(PDO $pdo, $tipe, $periode) {
     ];
 }
 
-function query_barang_keluar_periode(PDO $pdo, $bulan, $tahun, $tglMulai, $tglSelesai) {
+function query_barang_keluar_periode(PDO $pdo, $bulan, $tahun, $tglMulai, $tglSelesai, $scopeBidang = null) {
     $namaBulan = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    $filterBidang = $scopeBidang ? ' AND t.bidang = ?' : '';
 
     if ($tglMulai && $tglSelesai) {
         $stmt = $pdo->prepare("SELECT t.tanggal, i.nama, i.kode, i.satuan, t.jumlah, t.bidang, t.penerima
             FROM transactions t JOIN items i ON i.id = t.item_id
-            WHERE t.tipe='keluar' AND t.tanggal BETWEEN ? AND ? ORDER BY t.tanggal DESC");
-        $stmt->execute([$tglMulai, $tglSelesai]);
+            WHERE t.tipe='keluar' AND t.tanggal BETWEEN ? AND ?" . $filterBidang . " ORDER BY t.tanggal DESC");
+        $params = [$tglMulai, $tglSelesai];
+        if ($filterBidang) $params[] = $scopeBidang;
+        $stmt->execute($params);
         $label = date('d M Y', strtotime($tglMulai)) . ' – ' . date('d M Y', strtotime($tglSelesai));
     } else {
         $tahun = $tahun ?: date('Y');
         $bulan = $bulan ?: (int)date('n');
         $stmt = $pdo->prepare("SELECT t.tanggal, i.nama, i.kode, i.satuan, t.jumlah, t.bidang, t.penerima
             FROM transactions t JOIN items i ON i.id = t.item_id
-            WHERE t.tipe='keluar' AND YEAR(t.tanggal)=? AND MONTH(t.tanggal)=? ORDER BY t.tanggal DESC");
-        $stmt->execute([$tahun, $bulan]);
+            WHERE t.tipe='keluar' AND YEAR(t.tanggal)=? AND MONTH(t.tanggal)=?" . $filterBidang . " ORDER BY t.tanggal DESC");
+        $params = [$tahun, $bulan];
+        if ($filterBidang) $params[] = $scopeBidang;
+        $stmt->execute($params);
         $label = $namaBulan[(int)$bulan] . ' ' . $tahun;
     }
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -143,8 +159,14 @@ function query_barang_keluar_periode(PDO $pdo, $bulan, $tahun, $tglMulai, $tglSe
     ];
 }
 
-function query_rekap_bidang(PDO $pdo, $bidang, $tahun) {
+/**
+ * $scopeBidang: kalau diisi, parameter $bidang dari AI DIABAIKAN dan dipaksa
+ * jadi bidang milik user login — supaya petugas bidang tidak bisa "menyamar"
+ * minta rekap bidang lain lewat pertanyaan ke Asisten AI.
+ */
+function query_rekap_bidang(PDO $pdo, $bidang, $tahun, $scopeBidang = null) {
     $tahun = $tahun ?: date('Y');
+    if ($scopeBidang) $bidang = $scopeBidang;
 
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(jumlah),0) c FROM transactions WHERE tipe='masuk' AND YEAR(tanggal)=?");
     $stmt->execute([$tahun]);
@@ -199,31 +221,43 @@ function query_stok_barang(PDO $pdo, $namaBarang) {
     ];
 }
 
-function query_rekap_lengkap(PDO $pdo, $bulan, $tahun) {
+/**
+ * $scopeBidang: kalau diisi, baris transaksi keluar & rekap per bidang dibatasi
+ * ke bidang user login saja. total_masuk (stok gudang) tetap ditampilkan apa
+ * adanya karena tidak melekat ke bidang tertentu.
+ */
+function query_rekap_lengkap(PDO $pdo, $bulan, $tahun, $scopeBidang = null) {
     $tahun = $tahun ?: date('Y');
     $bulan = $bulan ?: (int)date('n');
     $namaBulan = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    $filterBidang = $scopeBidang ? ' AND bidang = ?' : '';
 
     $stmt = $pdo->prepare("SELECT COALESCE(SUM(jumlah),0) c FROM transactions WHERE tipe='masuk' AND YEAR(tanggal)=? AND MONTH(tanggal)=?");
     $stmt->execute([$tahun, $bulan]);
     $totalMasuk = (int)$stmt->fetch()['c'];
 
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(jumlah),0) c FROM transactions WHERE tipe='keluar' AND YEAR(tanggal)=? AND MONTH(tanggal)=?");
-    $stmt->execute([$tahun, $bulan]);
+    $paramsKeluar = [$tahun, $bulan]; if ($scopeBidang) $paramsKeluar[] = $scopeBidang;
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(jumlah),0) c FROM transactions WHERE tipe='keluar' AND YEAR(tanggal)=? AND MONTH(tanggal)=?" . $filterBidang);
+    $stmt->execute($paramsKeluar);
     $totalKeluar = (int)$stmt->fetch()['c'];
 
+    // Untuk baris gabungan masuk+keluar: kalau ter-scope, masuk tetap ditampilkan
+    // (tidak melekat ke bidang), tapi keluar dibatasi ke bidang user.
+    $filterRows = $scopeBidang ? " AND (t.tipe='masuk' OR t.bidang = ?)" : '';
+    $paramsRows = [$tahun, $bulan]; if ($scopeBidang) $paramsRows[] = $scopeBidang;
     $stmt = $pdo->prepare("SELECT t.tanggal, i.nama, i.kode, t.tipe, t.jumlah, i.satuan, t.bidang, t.penerima
         FROM transactions t JOIN items i ON i.id = t.item_id
-        WHERE YEAR(t.tanggal)=? AND MONTH(t.tanggal)=? ORDER BY t.tanggal DESC");
-    $stmt->execute([$tahun, $bulan]);
+        WHERE YEAR(t.tanggal)=? AND MONTH(t.tanggal)=?" . $filterRows . " ORDER BY t.tanggal DESC");
+    $stmt->execute($paramsRows);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $menipis = $pdo->query('SELECT kode, nama, satuan, stok, stok_minimum FROM items WHERE stok_minimum>0 AND stok<=stok_minimum ORDER BY stok ASC')->fetchAll(PDO::FETCH_ASSOC);
 
+    $paramsBidang = [$tahun, $bulan]; if ($scopeBidang) $paramsBidang[] = $scopeBidang;
     $stmt = $pdo->prepare("SELECT bidang, COALESCE(SUM(jumlah),0) total FROM transactions
-        WHERE tipe='keluar' AND bidang IS NOT NULL AND bidang<>'' AND YEAR(tanggal)=? AND MONTH(tanggal)=?
+        WHERE tipe='keluar' AND bidang IS NOT NULL AND bidang<>'' AND YEAR(tanggal)=? AND MONTH(tanggal)=?" . $filterBidang . "
         GROUP BY bidang ORDER BY total DESC");
-    $stmt->execute([$tahun, $bulan]);
+    $stmt->execute($paramsBidang);
     $perBidang = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $label = $namaBulan[(int)$bulan] . ' ' . $tahun;
@@ -288,6 +322,341 @@ function query_riwayat_perubahan_barang(PDO $pdo, $namaBarang = null, $jumlahHar
     ];
 }
 
+/**
+ * ============================================================
+ * KONTROL AKSES BERBASIS PERAN/BIDANG
+ * ============================================================
+ * Petugas dengan role 'bidang' hanya boleh melihat data transaksi milik
+ * bidangnya sendiri lewat Asisten AI (data stok/barang tetap bisa dilihat
+ * semua orang karena itu info gudang bersama, bukan data sensitif per-bidang).
+ * role 'admin'/'super' tidak dibatasi.
+ *
+ * CATATAN: fungsi ini mengasumsikan current_user() mengembalikan array
+ * dengan key 'role' dan 'bidang_nama' sesuai struktur tabel `users` di
+ * database. Kalau nama key berbeda di implementasi Anda, sesuaikan di sini.
+ */
+function ai_get_scope(array $u) {
+    $role = $u['role'] ?? 'admin';
+    $bidangNama = $u['bidang_nama'] ?? null;
+    return [
+        'role' => $role,
+        'dibatasi_bidang' => ($role === 'bidang' && $bidangNama) ? $bidangNama : null,
+    ];
+}
+
+/**
+ * ============================================================
+ * INTENT "prediksi_stok_habis" — peringatan proaktif berbasis tren.
+ * ============================================================
+ * Hitung rata-rata pemakaian (barang KELUAR) per hari selama $periodeHari hari
+ * terakhir, lalu proyeksikan berapa hari lagi stok akan habis di kecepatan
+ * pemakaian tersebut. Barang tanpa histori keluar (rata2 = 0) tidak bisa
+ * diprediksi dan ditandai null, bukan dianggap "aman selamanya".
+ */
+function query_prediksi_stok_habis(PDO $pdo, $namaBarang = null, $periodeHari = 90) {
+    $periodeHari = max(7, min(365, (int)($periodeHari ?: 90)));
+    $sejak = date('Y-m-d', strtotime("-{$periodeHari} day"));
+
+    $sql = "SELECT i.id, i.kode, i.nama, i.satuan, i.stok, i.stok_minimum,
+            COALESCE(SUM(CASE WHEN t.tipe='keluar' AND t.tanggal >= ? THEN t.jumlah ELSE 0 END),0) AS total_keluar_periode
+        FROM items i
+        LEFT JOIN transactions t ON t.item_id = i.id
+        WHERE 1=1";
+    $params = [$sejak];
+    if ($namaBarang) {
+        $sql .= ' AND (i.nama LIKE ? OR i.kode LIKE ?)';
+        $like = '%' . $namaBarang . '%';
+        $params[] = $like; $params[] = $like;
+    }
+    $sql .= ' GROUP BY i.id, i.kode, i.nama, i.satuan, i.stok, i.stok_minimum';
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $hasil = [];
+    foreach ($items as $it) {
+        $rataRataPerHari = $periodeHari > 0 ? ((float)$it['total_keluar_periode'] / $periodeHari) : 0;
+        $prediksiHari = null;
+        $prediksiTanggal = null;
+        if ($rataRataPerHari > 0) {
+            $prediksiHari = (int) floor((int)$it['stok'] / $rataRataPerHari);
+            $prediksiTanggal = date('Y-m-d', strtotime("+{$prediksiHari} day"));
+        }
+        $hasil[] = [
+            'kode' => $it['kode'], 'nama' => $it['nama'], 'satuan' => $it['satuan'],
+            'stok' => (int)$it['stok'], 'stok_minimum' => (int)$it['stok_minimum'],
+            'rata2_keluar_per_hari' => round($rataRataPerHari, 2),
+            'perkiraan_habis_hari_lagi' => $prediksiHari,
+            'perkiraan_tanggal_habis' => $prediksiTanggal,
+        ];
+    }
+
+    // Urutkan: yang paling cepat habis (bukan null) tampil paling atas.
+    usort($hasil, function ($a, $b) {
+        if ($a['perkiraan_habis_hari_lagi'] === null && $b['perkiraan_habis_hari_lagi'] === null) return 0;
+        if ($a['perkiraan_habis_hari_lagi'] === null) return 1;
+        if ($b['perkiraan_habis_hari_lagi'] === null) return -1;
+        return $a['perkiraan_habis_hari_lagi'] <=> $b['perkiraan_habis_hari_lagi'];
+    });
+
+    $kritis = array_filter($hasil, function ($h) { return $h['perkiraan_habis_hari_lagi'] !== null && $h['perkiraan_habis_hari_lagi'] <= 30; });
+
+    return [
+        'title' => 'Prediksi Barang Akan Habis (tren ' . $periodeHari . ' hari terakhir)',
+        'rows' => $hasil, 'chart' => null,
+        'summary' => [
+            'periode_analisis_hari' => $periodeHari,
+            'jumlah_barang_dianalisis' => count($hasil),
+            'jumlah_barang_kritis_30_hari' => count($kritis),
+            'barang_paling_cepat_habis' => $hasil[0]['nama'] ?? null,
+            'perkiraan_hari_barang_tercepat' => $hasil[0]['perkiraan_habis_hari_lagi'] ?? null,
+        ],
+    ];
+}
+
+/**
+ * ============================================================
+ * INTENT "analisis_data" — QUERY BUILDER AMAN (whitelist only).
+ * ============================================================
+ * AI (Lapisan 1) TIDAK PERNAH mengirim SQL. Ia hanya memilih nama field,
+ * operator, dan fungsi agregasi dari daftar berikut. Semua nama field
+ * divalidasi terhadap whitelist di bawah SEBELUM dipakai membangun query;
+ * nilai filter selalu lewat parameter binding (PDO), tidak pernah
+ * digabung langsung ke string SQL. Field/operator yang tidak dikenal
+ * diabaikan secara diam-diam (bukan error) supaya tetap toleran terhadap
+ * output AI yang sedikit meleset.
+ */
+
+const ANALISIS_SUMBER = [
+    'transaksi' => [
+        'from' => 'transactions t JOIN items i ON i.id = t.item_id',
+        'fields' => [
+            'tipe' => 't.tipe', 'bidang' => 't.bidang', 'penerima' => 't.penerima',
+            'nama_barang' => 'i.nama', 'kode_barang' => 'i.kode', 'jenis_barang' => 'i.jenis',
+            'jumlah' => 't.jumlah', 'tanggal' => 't.tanggal',
+            'tahun' => 'YEAR(t.tanggal)', 'bulan' => 'MONTH(t.tanggal)',
+        ],
+        'numeric' => ['jumlah', 'tahun', 'bulan'],
+        'kolom_tampil' => ['t.tanggal AS tanggal', 'i.nama AS nama', 'i.kode AS kode', 't.tipe AS tipe', 't.jumlah AS jumlah', 't.bidang AS bidang', 't.penerima AS penerima'],
+    ],
+    'barang' => [
+        'from' => 'items',
+        'fields' => [
+            'nama' => 'nama', 'jenis' => 'jenis', 'satuan' => 'satuan',
+            'stok' => 'stok', 'stok_minimum' => 'stok_minimum', 'harga' => 'harga', 'tahun_masuk' => 'tahun_masuk',
+        ],
+        'numeric' => ['stok', 'stok_minimum', 'harga', 'tahun_masuk'],
+        'kolom_tampil' => ['kode', 'nama', 'jenis', 'satuan', 'stok', 'stok_minimum', 'harga'],
+    ],
+    'log_perubahan' => [
+        'from' => 'items_log',
+        'fields' => [
+            'aksi' => 'aksi', 'username' => 'username', 'nama_barang' => 'nama_barang',
+            'kode_barang' => 'kode_barang', 'tanggal' => 'created_at',
+        ],
+        'numeric' => [],
+        'kolom_tampil' => ['created_at AS tanggal', 'aksi', 'kode_barang', 'nama_barang', 'username', 'perubahan'],
+    ],
+];
+
+const ANALISIS_OPERATOR = ['=', '!=', '>', '<', '>=', '<=', 'like', 'between'];
+const ANALISIS_AGREGASI_FUNGSI = ['count', 'sum', 'avg', 'min', 'max'];
+
+/**
+ * $scopeBidang: kalau diisi (user role 'bidang'), SETELAH filter dari AI dibangun,
+ * kita SELALU menambahkan "AND t.bidang = ?" secara terpisah di level SQL (bukan
+ * lewat spec AI) — supaya walau AI salah/dimanipulasi mengirim filter bidang lain,
+ * hasil akhirnya tetap tidak bisa melebihi cakupan bidang user. Hanya berlaku untuk
+ * sumber 'transaksi'; sumber 'barang' & 'log_perubahan' tidak melekat ke bidang.
+ */
+function query_analisis_data(PDO $pdo, array $spec, $scopeBidang = null) {
+    $sumberKey = $spec['sumber'] ?? '';
+    if (!isset(ANALISIS_SUMBER[$sumberKey])) {
+        return ['title' => 'Analisis Data', 'rows' => [], 'chart' => null, 'summary' => ['error' => 'Sumber data tidak dikenali.']];
+    }
+    // log_perubahan (riwayat edit data barang oleh admin) bukan info milik bidang
+    // tertentu -> sama seperti intent riwayat_perubahan_barang, ditutup untuk role 'bidang'.
+    if ($scopeBidang && $sumberKey === 'log_perubahan') {
+        return [
+            'title' => 'Analisis Data (log_perubahan)', 'rows' => [], 'chart' => null,
+            'summary' => ['akses' => 'dibatasi', 'keterangan' => 'Informasi ini hanya tersedia untuk admin/super admin.'],
+        ];
+    }
+    $meta = ANALISIS_SUMBER[$sumberKey];
+    $fieldMap = $meta['fields'];
+    $params = [];
+    $whereParts = [];
+    $filterDiabaikan = 0;
+
+    foreach (($spec['filter'] ?? []) as $f) {
+        $field = $f['field'] ?? '';
+        $operator = $f['operator'] ?? '=';
+        if (!isset($fieldMap[$field]) || !in_array($operator, ANALISIS_OPERATOR, true)) {
+            $filterDiabaikan++;
+            continue;
+        }
+        $col = $fieldMap[$field];
+        $nilai = $f['nilai'] ?? null;
+        if ($nilai === null || $nilai === '') { $filterDiabaikan++; continue; }
+
+        if ($operator === 'like') {
+            $whereParts[] = "$col LIKE ?";
+            $params[] = '%' . $nilai . '%';
+        } elseif ($operator === 'between') {
+            $nilai2 = $f['nilai2'] ?? null;
+            if ($nilai2 === null || $nilai2 === '') { $filterDiabaikan++; continue; }
+            $whereParts[] = "$col BETWEEN ? AND ?";
+            $params[] = $nilai; $params[] = $nilai2;
+        } else {
+            $whereParts[] = "$col $operator ?";
+            $params[] = $nilai;
+        }
+    }
+
+    // GROUP BY (opsional)
+    $groupByField = $spec['group_by'] ?? null;
+    $groupByCol = ($groupByField && isset($fieldMap[$groupByField])) ? $fieldMap[$groupByField] : null;
+
+    // AGREGASI (opsional)
+    $agg = $spec['agregasi'] ?? null;
+    $aggFungsi = null; $aggCol = null;
+    if (is_array($agg) && isset($agg['fungsi']) && in_array($agg['fungsi'], ANALISIS_AGREGASI_FUNGSI, true)) {
+        $aggFungsi = $agg['fungsi'];
+        if ($aggFungsi === 'count') {
+            $aggCol = '*'; // COUNT(*) selalu aman, tidak perlu field numerik tertentu
+        } elseif (isset($agg['field']) && isset($fieldMap[$agg['field']]) && in_array($agg['field'], $meta['numeric'], true)) {
+            $aggCol = $fieldMap[$agg['field']];
+        } else {
+            $aggFungsi = null; // field agregasi tidak valid/tidak numerik -> batalkan agregasi
+        }
+    }
+
+    // Pemaksaan cakupan bidang (lihat docblock di atas) — SELALU ditambahkan
+    // paling akhir, terlepas dari apa pun yang dikirim AI di $spec['filter'].
+    if ($scopeBidang && $sumberKey === 'transaksi') {
+        $whereParts[] = 't.bidang = ?';
+        $params[] = $scopeBidang;
+    }
+
+    $whereSql = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
+    $batas = max(1, min(100, (int)($spec['batas'] ?? 20)));
+
+    // Mode 1: ada agregasi ATAU group_by -> query ringkasan/rekap
+    if ($aggFungsi || $groupByCol) {
+        $selectParts = [];
+        if ($groupByCol) $selectParts[] = "$groupByCol AS grup";
+        $selectParts[] = ($aggFungsi ? strtoupper($aggFungsi) . "($aggCol)" : 'COUNT(*)') . ' AS nilai_agregat';
+
+        $sql = 'SELECT ' . implode(', ', $selectParts) . ' FROM ' . $meta['from'] . ' ' . $whereSql;
+        if ($groupByCol) $sql .= " GROUP BY $groupByCol";
+
+        // Urutkan: default berdasarkan nilai_agregat menurun, kecuali diminta lain.
+        $urutkanArah = (strtolower($spec['urutkan_arah'] ?? 'desc') === 'asc') ? 'ASC' : 'DESC';
+        $urutkanField = $spec['urutkan_field'] ?? null;
+        if ($urutkanField === 'agregasi' || !$groupByCol) {
+            $sql .= " ORDER BY nilai_agregat $urutkanArah";
+        } elseif ($groupByCol) {
+            $sql .= " ORDER BY nilai_agregat $urutkanArah";
+        }
+        $sql .= ' LIMIT ' . $batas;
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $chart = null;
+        if ($groupByCol && $rows) {
+            $chart = ['type' => 'bar', 'labels' => array_column($rows, 'grup'), 'datasets' => [
+                ['label' => strtoupper($aggFungsi ?: 'count'), 'values' => array_map('floatval', array_column($rows, 'nilai_agregat'))],
+            ]];
+        }
+
+        return [
+            'title' => 'Analisis Data (' . $sumberKey . ')',
+            'rows' => $rows, 'chart' => $chart,
+            'summary' => [
+                'sumber' => $sumberKey, 'fungsi_agregasi' => $aggFungsi ?: 'count',
+                'dikelompokkan_per' => $groupByField, 'jumlah_baris_hasil' => count($rows),
+                'filter_diabaikan' => $filterDiabaikan ?: null,
+            ],
+        ];
+    }
+
+    // Mode 2: tanpa agregasi/group_by -> daftar baris mentah (list biasa)
+    $orderCol = null;
+    $urutkanField = $spec['urutkan_field'] ?? null;
+    if ($urutkanField && isset($fieldMap[$urutkanField])) $orderCol = $fieldMap[$urutkanField];
+    $urutkanArah = (strtolower($spec['urutkan_arah'] ?? 'desc') === 'asc') ? 'ASC' : 'DESC';
+
+    $sql = 'SELECT ' . implode(', ', $meta['kolom_tampil']) . ' FROM ' . $meta['from'] . ' ' . $whereSql;
+    if ($orderCol) $sql .= " ORDER BY $orderCol $urutkanArah";
+    $sql .= ' LIMIT ' . $batas;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    return [
+        'title' => 'Analisis Data (' . $sumberKey . ')',
+        'rows' => $rows, 'chart' => null,
+        'summary' => [
+            'sumber' => $sumberKey, 'jumlah_baris_hasil' => count($rows),
+            'filter_diabaikan' => $filterDiabaikan ?: null,
+        ],
+    ];
+}
+
+/**
+ * ============================================================
+ * CACHE JAWABAN SINGKAT (butuh tabel ai_answer_cache, lihat migrasi_fitur_baru.sql)
+ * ============================================================
+ * Supaya pertanyaan yang sama persis dalam rentang waktu dekat (mis. ditanya
+ * dua kali oleh user berbeda) tidak perlu memanggil Gemini API ulang. Kunci
+ * cache SELALU menyertakan cakupan bidang & konteks riwayat percakapan, supaya
+ * cache TIDAK PERNAH membocorkan jawaban antar-cakupan akses atau konteks
+ * yang berbeda — kalau salah satu bagian itu beda, otomatis cache miss (aman,
+ * hanya mengorbankan sedikit hit-rate, bukan korbankan keamanan/akurasi).
+ */
+const AI_CACHE_TTL_DETIK = 90;
+
+function ai_cache_build_key($question, $modelKey, $scopeBidang, array $riwayat) {
+    $questionNorm = mb_strtolower(trim(preg_replace('/\s+/', ' ', $question)));
+    $riwayatHash = md5(json_encode($riwayat, JSON_UNESCAPED_UNICODE));
+    return md5($questionNorm . '|' . $modelKey . '|' . ($scopeBidang ?: 'ALL') . '|' . $riwayatHash);
+}
+
+function ai_cache_get(PDO $pdo, $cacheKey) {
+    try {
+        $stmt = $pdo->prepare("SELECT jawaban, blocks_json, bisa_export FROM ai_answer_cache
+            WHERE cache_key = ? AND created_at >= (NOW() - INTERVAL " . AI_CACHE_TTL_DETIK . " SECOND)");
+        $stmt->execute([$cacheKey]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) return null;
+        return [
+            'jawaban' => $row['jawaban'],
+            'blocks' => json_decode($row['blocks_json'] ?? '[]', true) ?: [],
+            'bisa_export' => (bool)$row['bisa_export'],
+        ];
+    } catch (Throwable $e) {
+        // Tabel cache belum ada / migrasi belum dijalankan -> anggap saja cache miss,
+        // jangan sampai bikin seluruh fitur tanya-jawab error karenanya.
+        return null;
+    }
+}
+
+function ai_cache_set(PDO $pdo, $cacheKey, $jawaban, array $blocks, $bisaExport) {
+    try {
+        $stmt = $pdo->prepare("INSERT INTO ai_answer_cache (cache_key, jawaban, blocks_json, bisa_export, created_at)
+            VALUES (?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE jawaban=VALUES(jawaban), blocks_json=VALUES(blocks_json), bisa_export=VALUES(bisa_export), created_at=NOW()");
+        $stmt->execute([$cacheKey, $jawaban, json_encode($blocks, JSON_UNESCAPED_UNICODE), $bisaExport ? 1 : 0]);
+    } catch (Throwable $e) {
+        // Diamkan — cache bersifat optimisasi, kegagalan menyimpan tidak boleh
+        // menggagalkan jawaban yang sudah berhasil dibuat untuk pengguna.
+    }
+}
+
 // ============================================================
 // Endpoint: hapus seluruh riwayat percakapan milik user yang login
 // ============================================================
@@ -325,76 +694,137 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'ask') {
         $modelKey = GEMINI_MODEL_DEFAULT;
     }
 
+    // Kontrol akses berbasis peran: user dengan role 'bidang' hanya boleh melihat
+    // data transaksi bidangnya sendiri lewat Asisten AI. null = tidak dibatasi
+    // (role 'admin'/'super' tetap bisa lihat semua bidang seperti sebelumnya).
+    $scopeBidang = (($u['role'] ?? '') === 'bidang') ? ($u['bidang_nama'] ?? null) : null;
+
     $daftarBarang = $pdo->query('SELECT nama FROM items')->fetchAll(PDO::FETCH_COLUMN);
-    $klasifikasi = ai_classify_intent($question, $daftarBarang, $modelKey);
-    $intents = $klasifikasi['intents'] ?? [['intent' => 'tidak_dikenali']];
-    $apiError = $klasifikasi['error'] ?? null;
 
-    $blocks = [];
-    $summaryForAI = [];
+    // Ambil 3 percakapan terakhir milik user ini sebagai konteks, supaya
+    // pertanyaan singkat/lanjutan bisa dipahami Lapisan 1 (lihat ai_helper.php).
+    $stmtRiwayat = $pdo->prepare('SELECT pertanyaan, jawaban FROM ai_chat_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 3');
+    $stmtRiwayat->execute([$u['id']]);
+    $riwayatUntukAI = $stmtRiwayat->fetchAll(PDO::FETCH_ASSOC);
 
-    if (!$apiError) {
+    // Cek cache jawaban singkat dulu sebelum panggil Gemini (lihat ai_cache_* di atas).
+    $cacheKey = ai_cache_build_key($question, $modelKey, $scopeBidang, $riwayatUntukAI);
+    $cached = ai_cache_get($pdo, $cacheKey);
+
+    if ($cached) {
+        $jawaban = $cached['jawaban'];
+        $blocks = $cached['blocks'];
+        $hasExportable = $cached['bisa_export'];
+        $intentsUntukLog = ['(cache)'];
+    } else {
+        $klasifikasi = ai_classify_intent($question, $daftarBarang, $modelKey, $riwayatUntukAI);
+        $intents = $klasifikasi['intents'] ?? [['intent' => 'tidak_dikenali']];
+        $apiError = $klasifikasi['error'] ?? null;
+        $intentsUntukLog = array_column($intents, 'intent');
+
+        $blocks = [];
+        $summaryForAI = [];
+
+        // Kalau AI meminta klarifikasi, langsung balas pertanyaan baliknya —
+        // jangan jalankan query apa pun, dan jangan panggil Lapisan 3.
+        $klarifikasi = null;
         foreach ($intents as $it) {
-            $intentName = $it['intent'] ?? 'tidak_dikenali';
-            $block = null;
-            switch ($intentName) {
-                case 'rekap_stok_menipis':
-                    $block = query_rekap_stok_menipis($pdo);
-                    break;
-                case 'cek_ketersediaan':
-                    $block = query_cek_ketersediaan($pdo, $it['nama_barang'] ?? $question);
-                    break;
-                case 'ringkasan_laporan':
-                    $block = query_ringkasan_laporan($pdo);
-                    break;
-                case 'grafik_transaksi':
-                    $block = query_grafik_transaksi($pdo, $it['jumlah_bulan'] ?? 6);
-                    break;
-                case 'detail_transaksi':
-                    $block = query_detail_transaksi($pdo, $it['tipe'] ?? 'keluar', $it['periode'] ?? 'hari_ini');
-                    break;
-                case 'barang_keluar_periode':
-                    $block = query_barang_keluar_periode($pdo, $it['bulan'] ?? null, $it['tahun'] ?? null, $it['tanggal_mulai'] ?? null, $it['tanggal_selesai'] ?? null);
-                    break;
-                case 'rekap_bidang':
-                    $block = query_rekap_bidang($pdo, $it['bidang'] ?? null, $it['tahun'] ?? null);
-                    break;
-                case 'stok_barang':
-                    $block = query_stok_barang($pdo, $it['nama_barang'] ?? null);
-                    break;
-                case 'rekap_lengkap':
-                    $block = query_rekap_lengkap($pdo, $it['bulan'] ?? null, $it['tahun'] ?? null);
-                    break;
-                case 'riwayat_perubahan_barang':
-                    $block = query_riwayat_perubahan_barang($pdo, $it['nama_barang'] ?? null, $it['jumlah_hari'] ?? 7);
-                    break;
-            }
-            if ($block) {
-                $block['intent'] = $intentName;
-                $blocks[] = $block;
-                $summaryForAI[$intentName] = $block['summary'] ?? null;
+            if (($it['intent'] ?? '') === 'perlu_klarifikasi') {
+                $klarifikasi = $it['pertanyaan_balik'] ?? 'Bisa perjelas maksud pertanyaannya?';
+                break;
             }
         }
-    }
 
-    if ($apiError) {
-        $jawaban = 'Asisten AI sedang bermasalah: ' . $apiError . ' Silakan coba lagi nanti atau hubungi admin.';
-    } elseif (!$blocks) {
-        $jawaban = 'Maaf, saya belum bisa membantu pertanyaan itu. Saya bisa bantu: cek stok menipis, cek ketersediaan barang, tren grafik transaksi, daftar barang masuk/keluar per bulan atau rentang tanggal, rekap per bidang, sisa stok barang, rekap lengkap bulanan, atau riwayat siapa mengubah data barang.';
-    } else {
-        $jawaban = ai_generate_answer($summaryForAI, $modelKey);
+        if ($klarifikasi) {
+            $jawaban = $klarifikasi;
+        } elseif (!$apiError) {
+            foreach ($intents as $it) {
+                $intentName = $it['intent'] ?? 'tidak_dikenali';
+                $block = null;
+                switch ($intentName) {
+                    case 'rekap_stok_menipis':
+                        $block = query_rekap_stok_menipis($pdo);
+                        break;
+                    case 'cek_ketersediaan':
+                        $block = query_cek_ketersediaan($pdo, $it['nama_barang'] ?? $question);
+                        break;
+                    case 'ringkasan_laporan':
+                        $block = query_ringkasan_laporan($pdo);
+                        break;
+                    case 'grafik_transaksi':
+                        $block = query_grafik_transaksi($pdo, $it['jumlah_bulan'] ?? 6);
+                        break;
+                    case 'detail_transaksi':
+                        $block = query_detail_transaksi($pdo, $it['tipe'] ?? 'keluar', $it['periode'] ?? 'hari_ini', $scopeBidang);
+                        break;
+                    case 'barang_keluar_periode':
+                        $block = query_barang_keluar_periode($pdo, $it['bulan'] ?? null, $it['tahun'] ?? null, $it['tanggal_mulai'] ?? null, $it['tanggal_selesai'] ?? null, $scopeBidang);
+                        break;
+                    case 'rekap_bidang':
+                        $block = query_rekap_bidang($pdo, $it['bidang'] ?? null, $it['tahun'] ?? null, $scopeBidang);
+                        break;
+                    case 'stok_barang':
+                        $block = query_stok_barang($pdo, $it['nama_barang'] ?? null);
+                        break;
+                    case 'rekap_lengkap':
+                        $block = query_rekap_lengkap($pdo, $it['bulan'] ?? null, $it['tahun'] ?? null, $scopeBidang);
+                        break;
+                    case 'riwayat_perubahan_barang':
+                        if ($scopeBidang) {
+                            // Riwayat siapa mengubah DATA BARANG (bukan transaksi bidang)
+                            // adalah info administratif gudang, bukan milik bidang tertentu
+                            // -> tidak ditampilkan ke role 'bidang' lewat Asisten AI.
+                            $block = [
+                                'title' => 'Riwayat Perubahan Data Barang',
+                                'rows' => [], 'chart' => null,
+                                'summary' => ['akses' => 'dibatasi', 'keterangan' => 'Informasi ini hanya tersedia untuk admin/super admin.'],
+                            ];
+                        } else {
+                            $block = query_riwayat_perubahan_barang($pdo, $it['nama_barang'] ?? null, $it['jumlah_hari'] ?? 7);
+                        }
+                        break;
+                    case 'analisis_data':
+                        $block = query_analisis_data($pdo, $it, $scopeBidang);
+                        break;
+                    case 'prediksi_stok_habis':
+                        $block = query_prediksi_stok_habis($pdo, $it['nama_barang'] ?? null, $it['periode_hari'] ?? 90);
+                        break;
+                }
+                if ($block) {
+                    $block['intent'] = $intentName;
+                    $blocks[] = $block;
+                    $summaryForAI[$intentName] = $block['summary'] ?? null;
+                }
+            }
+        }
+
+        if ($klarifikasi) {
+            // $jawaban sudah diisi di atas.
+        } elseif ($apiError) {
+            $jawaban = 'Asisten AI sedang bermasalah: ' . $apiError . ' Silakan coba lagi nanti atau hubungi admin.';
+        } elseif (!$blocks) {
+            $jawaban = 'Maaf, saya belum bisa membantu pertanyaan itu. Saya bisa bantu: cek stok menipis, cek ketersediaan barang, tren grafik transaksi, daftar barang masuk/keluar per bulan atau rentang tanggal, rekap per bidang, sisa stok barang, rekap lengkap bulanan, riwayat siapa mengubah data barang, prediksi kapan barang akan habis, atau analisis/filter data custom (mis. "barang apa yang paling banyak keluar ke bidang X" atau "rata-rata harga per jenis barang").';
+        } else {
+            $jawaban = ai_generate_answer($summaryForAI, $modelKey);
+        }
+
+        $hasExportable = false;
+        foreach ($blocks as $b) { if (!empty($b['rows'])) { $hasExportable = true; break; } }
+
+        // Jangan cache kalau API AI sedang error — supaya percobaan berikutnya
+        // tidak "terjebak" cache gagal selama masa TTL.
+        if (!$apiError) {
+            ai_cache_set($pdo, $cacheKey, $jawaban, $blocks, $hasExportable);
+        }
     }
 
     $_SESSION['ai_last_result'] = ['question' => $question, 'blocks' => $blocks];
 
-    ai_audit_log($u['username'] ?? 'unknown', $question, implode(',', array_column($intents, 'intent')), $jawaban);
+    ai_audit_log($u['username'] ?? 'unknown', $question, implode(',', $intentsUntukLog), $jawaban);
 
     // Simpan ke riwayat percakapan (per user), supaya muncul lagi saat halaman dibuka ulang.
     $pdo->prepare('INSERT INTO ai_chat_history (user_id, pertanyaan, jawaban, blocks_json) VALUES (?, ?, ?, ?)')
         ->execute([$u['id'], $question, $jawaban, json_encode($blocks, JSON_UNESCAPED_UNICODE)]);
-
-    $hasExportable = false;
-    foreach ($blocks as $b) { if (!empty($b['rows'])) { $hasExportable = true; break; } }
 
     echo json_encode(['jawaban' => $jawaban, 'blocks' => $blocks, 'bisa_export' => $hasExportable]);
     exit;

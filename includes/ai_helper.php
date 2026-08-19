@@ -80,10 +80,32 @@ function ai_call($system, $userText, $modelKey = GEMINI_MODEL_DEFAULT) {
 }
 
 /**
+ * Bangun teks ringkas riwayat percakapan terakhir untuk dimasukkan ke prompt,
+ * supaya Lapisan 1 bisa memahami pertanyaan lanjutan/singkat yang merujuk ke
+ * percakapan sebelumnya (mis. "kalau bulan lalu gimana?", "yang itu berapa?").
+ * $riwayat: array of ['pertanyaan' => string, 'jawaban' => string], TERBARU DULU.
+ */
+function ai_build_riwayat_text(array $riwayat) {
+    if (!$riwayat) return '(tidak ada riwayat percakapan sebelumnya)';
+    // Balik urutan supaya kronologis (lama -> baru) waktu ditampilkan ke AI.
+    $riwayat = array_reverse(array_slice($riwayat, 0, 3));
+    $lines = [];
+    foreach ($riwayat as $r) {
+        $lines[] = '- Petugas: "' . mb_substr($r['pertanyaan'], 0, 150) . '"';
+        $lines[] = '  Asisten: "' . mb_substr($r['jawaban'], 0, 200) . '"';
+    }
+    return implode("\n", $lines);
+}
+
+/**
  * LAPISAN 1: Klasifikasikan intent — MENDUKUNG PERTANYAAN GABUNGAN.
  * Selalu mengembalikan array "intents".
+ *
+ * $riwayat: 0-3 pasangan pertanyaan/jawaban terakhir (terbaru dulu), dipakai
+ * supaya AI bisa mengerti pertanyaan singkat/lanjutan yang merujuk ke konteks
+ * sebelumnya. Opsional — kalau kosong, perilaku sama seperti sebelumnya.
  */
-function ai_classify_intent($question, array $daftarNamaBarang, $modelKey = GEMINI_MODEL_DEFAULT) {
+function ai_classify_intent($question, array $daftarNamaBarang, $modelKey = GEMINI_MODEL_DEFAULT, array $riwayat = []) {
     $qLower = mb_strtolower($question);
     $relevan = array_values(array_filter($daftarNamaBarang, function ($n) use ($qLower) {
         return mb_strpos($qLower, mb_strtolower(substr($n, 0, 4))) !== false
@@ -94,6 +116,7 @@ function ai_classify_intent($question, array $daftarNamaBarang, $modelKey = GEMI
     $hariIni = date('Y-m-d');
     $bulanIniAngka = (int)date('n');
     $tahunIni = date('Y');
+    $riwayatText = ai_build_riwayat_text($riwayat);
 
     $system = <<<SYS
 Kamu adalah pengklasifikasi maksud pertanyaan untuk sistem inventaris ATK.
@@ -106,6 +129,13 @@ diabaikan. JANGAN mudah menjatuhkan ke "tidak_dikenali" hanya karena penulisanny
 baku, typo, atau terpotong — coba pahami maksud sebenarnya semaksimal mungkin dulu.
 Hanya pakai "tidak_dikenali" kalau BENAR-BENAR tidak ada satu pun bagian pertanyaan yang
 nyambung ke topik stok/barang/transaksi/laporan ATK sama sekali.
+
+RIWAYAT PERCAKAPAN TERAKHIR (lama -> baru, maksimal 3 terakhir) — PENTING dipakai untuk
+memahami pertanyaan SINGKAT/LANJUTAN yang merujuk konteks sebelumnya, misalnya "kalau
+bulan lalu gimana?", "yang itu berapa?", "coba yang bidang lain juga":
+{$riwayatText}
+Kalau pertanyaan sekarang jelas berdiri sendiri (tidak merujuk apa pun sebelumnya),
+ABAIKAN riwayat di atas dan klasifikasikan murni dari pertanyaan sekarang saja.
 
 Pertanyaan petugas BISA mengandung LEBIH DARI SATU maksud sekaligus (misal: minta
 daftar barang keluar SEKALIGUS minta grafik). Balas HANYA JSON murni berisi array
@@ -140,7 +170,51 @@ Setiap elemen array adalah SALAH SATU dari intent berikut:
     admin", "siapa yang nambahin barang minggu ini", "riwayat perubahan data barang".
     Field "jumlah_hari" (default 7, rentang pencarian ke belakang), "nama_barang"
     (KOSONGKAN kalau user tidak sebut barang tertentu).
-11. "tidak_dikenali" - HANYA jika TIDAK ADA satu pun bagian pertanyaan yang cocok 1-10
+11. "analisis_data" - PERTANYAAN ANALITIK BEBAS yang TIDAK cocok rapi ke intent 1-10 di
+    atas, misalnya minta filter/agregasi/urutan kombinasi custom (contoh: "barang apa yang
+    paling banyak keluar ke bidang TIKKIM dengan jumlah lebih dari 5", "rata-rata harga
+    barang per jenis", "urutkan barang dari stok paling sedikit", "berapa kali PULPEN
+    keluar tahun ini", "siapa saja penerima barang bulan ini diurutkan terbanyak").
+    PENTING: HANYA boleh memakai nama field yang ada di whitelist berikut, JANGAN
+    mengarang nama field lain:
+
+    a) "sumber": "transaksi" (field yang boleh dipakai: tipe [masuk/keluar], bidang,
+       penerima, nama_barang, kode_barang, jenis_barang, jumlah, tanggal, tahun, bulan)
+    b) "sumber": "barang" (field: nama, jenis, satuan, stok, stok_minimum, harga,
+       tahun_masuk)
+    c) "sumber": "log_perubahan" (field: aksi [tambah/ubah/hapus], username, nama_barang,
+       kode_barang, tanggal)
+
+    Field lain untuk intent ini:
+    - "filter": array objek {"field", "operator" (salah satu: "=", "!=", ">", "<", ">=",
+      "<=", "like", "between"), "nilai", "nilai2" (HANYA untuk operator "between")}
+    - "group_by": nama field (atau kosongkan kalau tidak perlu dikelompokkan)
+    - "agregasi": {"fungsi": "count"/"sum"/"avg"/"min"/"max", "field": nama field numerik
+      yang diagregasi} — kosongkan seluruh objek ini kalau user cuma minta daftar/list
+      biasa tanpa hitungan
+    - "urutkan_field", "urutkan_arah" ("asc"/"desc")
+    - "batas": jumlah baris maksimal (default 20)
+
+12. "prediksi_stok_habis" - PREDIKSI kapan barang akan habis, BUKAN sekadar cek stok
+    sekarang — dihitung dari rata-rata pemakaian (barang keluar) beberapa bulan terakhir.
+    Pakai intent ini untuk pertanyaan seperti "barang apa yang bakal habis duluan", "kapan
+    stok pulpen habis", "barang mana yang perlu segera dipesan ulang", "prediksi kehabisan
+    stok". Field "nama_barang" (KOSONGKAN untuk semua barang sekaligus, diurutkan dari yang
+    paling cepat habis), "periode_hari" (rentang hari ke belakang buat hitung rata-rata
+    pemakaian, default 90).
+
+13. "perlu_klarifikasi" - GUNAKAN INI HANYA kalau pertanyaan BENAR-BENAR ambigu sehingga
+    menebak salah satu intent berisiko salah paham secara signifikan. Contoh situasi yang
+    LAYAK diklarifikasi: nama barang yang disebut cocok ke beberapa barang sekaligus dan
+    tidak jelas yang mana yang dimaksud; rentang waktu yang sama sekali tidak jelas
+    maksudnya dan bisa berarti sangat berbeda. JANGAN pakai ini hanya karena pertanyaan
+    singkat, tidak baku, atau typo — untuk kasus begitu tetap coba pahami semaksimal
+    mungkin dan pakai intent 1-12 seperti biasa. Field "pertanyaan_balik": satu kalimat
+    tanya balik yang sopan, singkat, spesifik, dalam Bahasa Indonesia, sebutkan pilihannya
+    kalau relevan (mis. "Maksud Anda PULPEN HITAM atau PULPEN BIRU? Ada dua jenis di
+    sistem."). Kalau intent ini dipakai, JANGAN sertakan intent lain dalam array yang sama.
+
+14. "tidak_dikenali" - HANYA jika TIDAK ADA satu pun bagian pertanyaan yang cocok 1-13
 
 Contoh sebagian nama barang yang ada di sistem:
 {$daftarBarangText}
@@ -155,6 +229,12 @@ Contoh format keluaran (JSON murni, satu objek saja):
 {"intents": [{"intent": "riwayat_perubahan_barang", "jumlah_hari": 7}]}
 {"intents": [{"intent": "riwayat_perubahan_barang", "jumlah_hari": 30, "nama_barang": "Pulpen"}]}
 {"intents": [{"intent": "detail_transaksi", "tipe": "keluar", "periode": "hari_ini"}, {"intent": "grafik_transaksi", "jumlah_bulan": 6}]}
+{"intents": [{"intent": "analisis_data", "sumber": "transaksi", "filter": [{"field": "bidang", "operator": "=", "nilai": "TIKKIM"}, {"field": "jumlah", "operator": ">", "nilai": "5"}], "group_by": "nama_barang", "agregasi": {"fungsi": "sum", "field": "jumlah"}, "urutkan_field": "agregasi", "urutkan_arah": "desc", "batas": 10}]}
+{"intents": [{"intent": "analisis_data", "sumber": "barang", "group_by": "jenis", "agregasi": {"fungsi": "avg", "field": "harga"}}]}
+{"intents": [{"intent": "analisis_data", "sumber": "transaksi", "filter": [{"field": "nama_barang", "operator": "like", "nilai": "PULPEN"}, {"field": "tipe", "operator": "=", "nilai": "keluar"}, {"field": "tahun", "operator": "=", "nilai": "2026"}], "agregasi": {"fungsi": "count", "field": "jumlah"}}]}
+{"intents": [{"intent": "prediksi_stok_habis", "periode_hari": 90}]}
+{"intents": [{"intent": "prediksi_stok_habis", "nama_barang": "Pulpen", "periode_hari": 60}]}
+{"intents": [{"intent": "perlu_klarifikasi", "pertanyaan_balik": "Maksud Anda PULPEN HITAM atau PULPEN BIRU? Ada dua jenis di sistem."}]}
 {"intents": [{"intent": "tidak_dikenali"}]}
 SYS;
 
