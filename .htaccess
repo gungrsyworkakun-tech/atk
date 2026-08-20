@@ -3,3 +3,21 @@ php_value upload_max_filesize 20M
 php_value post_max_size 25M
 php_value max_execution_time 120
 php_value memory_limit 256M
+
+# ============================================================
+# Clean URL: akses halaman tanpa akhiran .php
+# Contoh: /penitipan  -> otomatis membuka penitipan.php
+#         /penitipan.php tetap bisa diakses seperti biasa (tidak dihapus)
+# ============================================================
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Kalau yang diminta memang file/folder asli (termasuk file .php langsung), biarkan apa adanya
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Kalau path tanpa ekstensi cocok dengan file .php yang ada, arahkan (internal) ke file itu
+  RewriteCond %{REQUEST_FILENAME}\.php -f
+  RewriteRule ^([^.]+)$ $1.php [L]
+</IfModule>

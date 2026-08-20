@@ -11,6 +11,7 @@ const MODULES = [
     'kelola_permintaan'   => 'Permintaan ATK Bidang',
     'asisten_ai'          => 'Asisten AI',
     'penitipan'           => 'Penitipan ATK',
+    'kirim_notifikasi'    => 'Kirim Notifikasi',
 ];
 
 // Ikon + warna badge untuk tiap menu (dipakai di sidebar & kartu shortcut dashboard).
@@ -25,6 +26,7 @@ const MODULE_META = [
     'kelola_permintaan'    => ['icon' => 'clipboard',  'color' => 'indigo', 'sub' => 'Proses & update status permintaan ATK dari bidang'],
     'asisten_ai'           => ['icon' => 'chat',       'color' => 'purple', 'sub' => 'Tanya AI seputar stok & laporan'],
     'penitipan'            => ['icon' => 'archive',    'color' => 'amber',  'sub' => 'Barang pribadi yang dititipkan sementara ke gudang'],
+    'kirim_notifikasi'     => ['icon' => 'bell',        'color' => 'pink',   'sub' => 'Kirim pengumuman ke semua admin'],
 ];
 const ADMIN_META = [
     'kelola_admin'  => ['icon' => 'shield',    'color' => 'indigo', 'label' => 'Kelola Admin',  'sub' => 'Akun & hak akses admin biasa'],

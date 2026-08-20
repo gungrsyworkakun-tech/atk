@@ -18,10 +18,15 @@ $pageLabels['progres.php'] = 'Progres ATK';
 $pageLabels['input_bast.php'] = 'Input BAST';
 $breadcrumbLabel = $pageLabels[$currentPage] ?? null;
 
+/** Buang akhiran .php dari URL internal, biar link tampil bersih (clean URL via .htaccess). */
+function clean_url($file) {
+    return preg_replace('/\.php(\?|$)/', '$1', $file);
+}
+
 function nav_item($file, $label, $iconName) {
     global $currentPage;
     $active = $currentPage === $file ? 'active' : '';
-    echo '<a class="nav-item ' . $active . '" href="' . e($file) . '">';
+    echo '<a class="nav-item ' . $active . '" href="' . e(clean_url($file)) . '">';
     echo '<span class="nav-ic">' . icon($iconName, 17) . '</span>';
     echo '<span class="lbl">' . e($label) . '</span>';
     echo '</a>';
@@ -75,7 +80,7 @@ function nav_item($file, $label, $iconName) {
           <?php nav_item('analitik.php', 'Dashboard Analitik', 'gauge'); ?>
         </div>
 
-        <?php if (has_permission('barang_masuk_keluar') || has_permission('barcode') || has_permission('data_barang') || has_permission('bast') || has_permission('realisasi') || has_permission('harga') || has_permission('bidang') || has_permission('kelola_permintaan') || has_permission('asisten_ai') || has_permission('penitipan')): ?>
+        <?php if (has_permission('barang_masuk_keluar') || has_permission('barcode') || has_permission('data_barang') || has_permission('bast') || has_permission('realisasi') || has_permission('harga') || has_permission('bidang') || has_permission('kelola_permintaan') || has_permission('asisten_ai') || has_permission('penitipan') || has_permission('kirim_notifikasi')): ?>
         <div class="nav-group">
           <div class="nav-group-label">Data ATK</div>
           <?php if (has_permission('barang_masuk_keluar')): nav_item('transaksi.php', MODULES['barang_masuk_keluar'], MODULE_META['barang_masuk_keluar']['icon']); endif; ?>
@@ -87,6 +92,7 @@ function nav_item($file, $label, $iconName) {
           <?php if (has_permission('bidang')): nav_item('bidang.php', MODULES['bidang'], MODULE_META['bidang']['icon']); endif; ?>
           <?php if (has_permission('kelola_permintaan')): nav_item('kelola_permintaan.php', MODULES['kelola_permintaan'], MODULE_META['kelola_permintaan']['icon']); endif; ?>
           <?php if (has_permission('penitipan')): nav_item('penitipan.php', MODULES['penitipan'], MODULE_META['penitipan']['icon']); endif; ?>
+          <?php if (has_permission('kirim_notifikasi')): nav_item('kirim_notifikasi.php', MODULES['kirim_notifikasi'], MODULE_META['kirim_notifikasi']['icon']); endif; ?>
           <?php if (has_permission('asisten_ai')): nav_item('asisten_ai.php', MODULES['asisten_ai'], MODULE_META['asisten_ai']['icon']); endif; ?>
         </div>
         <?php endif; ?>
@@ -115,7 +121,7 @@ function nav_item($file, $label, $iconName) {
           <?= icon('chevron-down', 15) ?>
         </summary>
         <div class="uc-panel">
-          <a class="uc-link danger" href="logout.php"><?= icon('logout', 15) ?> Keluar</a>
+          <a class="uc-link danger" href="<?= clean_url('logout.php') ?>"><?= icon('logout', 15) ?> Keluar</a>
         </div>
       </details>
     </div>
@@ -127,7 +133,7 @@ function nav_item($file, $label, $iconName) {
     <div class="topbar">
       <button class="icon-btn-ghost" id="sidebar-toggle" type="button" title="Lipat/lebarkan sidebar"><?= icon('sidebar', 18) ?></button>
       <div class="crumb">
-        <a href="<?= is_bidang() ? 'permintaan.php' : 'index.php' ?>"><?= is_bidang() ? 'Permintaan ATK' : 'Dashboard' ?></a>
+        <a href="<?= clean_url(is_bidang() ? 'permintaan.php' : 'index.php') ?>"><?= is_bidang() ? 'Permintaan ATK' : 'Dashboard' ?></a>
         <?php if ($breadcrumbLabel && $currentPage !== 'index.php' && $currentPage !== 'permintaan.php'): ?>
           <span class="crumb-sep"><?= icon('chevron-right', 14) ?></span>
           <span class="crumb-current"><?= e($breadcrumbLabel) ?></span>
@@ -231,7 +237,7 @@ function nav_item($file, $label, $iconName) {
         }
 
         function muatNotifikasi() {
-          fetch('notifikasi.php?do=list').then(function (r) { return r.json(); }).then(function (data) {
+          fetch('notifikasi?do=list').then(function (r) { return r.json(); }).then(function (data) {
             renderList(data.items || []);
             updateDot(data.unread || 0);
             loaded = true;
@@ -241,7 +247,7 @@ function nav_item($file, $label, $iconName) {
         }
 
         function cekJumlahSaja() {
-          fetch('notifikasi.php?do=count').then(function (r) { return r.json(); }).then(function (data) {
+          fetch('notifikasi?do=count').then(function (r) { return r.json(); }).then(function (data) {
             updateDot(data.unread || 0);
           }).catch(function () {});
         }
@@ -260,7 +266,7 @@ function nav_item($file, $label, $iconName) {
           item.classList.remove('unread');
           var dotEl = item.querySelector('.ni-dot'); if (dotEl) dotEl.remove();
           var fd = new FormData(); fd.append('csrf', csrf); fd.append('id', id);
-          fetch('notifikasi.php?do=mark_read', { method: 'POST', body: fd }).then(function () { cekJumlahSaja(); });
+          fetch('notifikasi?do=mark_read', { method: 'POST', body: fd }).then(function () { cekJumlahSaja(); });
         });
 
         markAllBtn.addEventListener('click', function (e) {
@@ -270,7 +276,7 @@ function nav_item($file, $label, $iconName) {
             var dotEl = el.querySelector('.ni-dot'); if (dotEl) dotEl.remove();
           });
           var fd = new FormData(); fd.append('csrf', csrf);
-          fetch('notifikasi.php?do=mark_all_read', { method: 'POST', body: fd }).then(function () { updateDot(0); });
+          fetch('notifikasi?do=mark_all_read', { method: 'POST', body: fd }).then(function () { updateDot(0); });
         });
 
         document.addEventListener('click', function (e) {

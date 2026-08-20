@@ -119,13 +119,13 @@
         hasAny = true;
         addGroup('Barang');
         data.items.forEach(function (it) {
-          addLink('data_barang.php?action=edit&id=' + encodeURIComponent(it.id), it.nama, it.kode + ' · stok ' + it.stok);
+          addLink('data_barang?action=edit&id=' + encodeURIComponent(it.id), it.nama, it.kode + ' · stok ' + it.stok);
         });
       }
       if (data.bidang && data.bidang.length) {
         hasAny = true;
         addGroup('Bidang');
-        data.bidang.forEach(function (b) { addLink('bidang.php', b.nama); });
+        data.bidang.forEach(function (b) { addLink('bidang', b.nama); });
       }
       if (!hasAny) {
         var e = document.createElement('div');
@@ -143,7 +143,7 @@
       timer = setTimeout(function () {
         if (currentCtl) currentCtl.abort();
         currentCtl = new AbortController();
-        fetch('cari_barang.php?q=' + encodeURIComponent(q), { signal: currentCtl.signal })
+        fetch('cari_barang?q=' + encodeURIComponent(q), { signal: currentCtl.signal })
           .then(function (r) { return r.json(); })
           .then(render)
           .catch(function () {});
